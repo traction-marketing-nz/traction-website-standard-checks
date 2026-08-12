@@ -185,7 +185,7 @@ test("redirects: a wildcard that expands to the wrong place fails", () => {
   });
   const { report } = run({ root, only: ["redirects"] });
   assert.equal(report.ok, false);
-  assert.match(messages(report), /the rule promises \/our-work\/a/);
+  assert.match(messages(report), /the rule promises \/our-work\/zq7probe/);
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -211,6 +211,37 @@ test("redirects: a destination that is an ASSET, not a page, is accepted", () =>
       { src: "^/brochure/?$", headers: { Location: "/files/brochure.pdf" }, status: 301 },
     ]),
     "dist/client/files/brochure.pdf": "%PDF-1.4",
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["redirects"] });
+  assert.equal(report.ok, true, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("redirects: a DIRECTORY destination fails — only a file or a page counts", () => {
+  // Widening targetExists to any path reopened, one commit later, the bug the
+  // commit before it fixed: dist/properties/ exists wherever the pages are
+  // properties/<slug>/index.html, and the live URL 404s.
+  const root = site({
+    "content/redirects.json": [{ from: "/old/", to: "/properties/", status: 301 }],
+    ".vercel/output/config.json": routes([{ src: "^/old/?$", headers: { Location: "/properties/" }, status: 301 }]),
+    "dist/client/properties/a-slug/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["redirects"] });
+  assert.equal(report.ok, false);
+  assert.match(messages(report), /no page was built there/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("redirects: an exact rule whose DESTINATION contains * is not a wildcard", () => {
+  // Testing `to` for a star misclassified an ordinary rule, and the wildcard
+  // checker then failed a correct site. Misclassification used to cost
+  // coverage; once wildcards were checked properly it started blocking deploys.
+  const root = site({
+    "content/redirects.json": [{ from: "/search/", to: "/find/?q=*", status: 301 }],
+    ".vercel/output/config.json": routes([{ src: "^/search/?$", headers: { Location: "/find/?q=*" }, status: 301 }]),
+    "dist/client/find/index.html": PAGE,
     "dist/client/404.html": PAGE,
   });
   const { report } = run({ root, only: ["redirects"] });

@@ -15,11 +15,21 @@
  * feature that motivated it: the behaviour is "the URL redirects", so every
  * rule is checked, in both forms, every build.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const isWildcard = (r) => String(r.from).includes("*") || String(r.to).includes("*");
+/**
+ * A wildcard is decided by the SOURCE, and only by a trailing `/*`.
+ *
+ * Testing the destination too misclassified `{from:"/search/", to:"/find/?q=*"}`
+ * — an ordinary exact rule — as a wildcard, and the wildcard checker then
+ * sampled `/search/a`, found nothing, and failed the build on a correct site.
+ * A misclassification used to cost coverage; once wildcards were checked
+ * properly it started red-lighting correct sites, which is the expensive
+ * direction and the one that gets a shared checker deleted.
+ */
+const isWildcard = (r) => /\/\*$/.test(String(r.from));
 const stripSlash = (p) => (p === "/" ? "/" : p.replace(/\/+$/, ""));
 
 /** Rules may be a bare array, or an object with a `redirects` key and comments. */
@@ -51,10 +61,18 @@ function pageExists(distRoot, urlPath) {
  * because it looked only for HTML: a false failure that blocks a deploy, which
  * is how a shared checker gets deleted. Shadowing still asks the narrower
  * question, because only a PAGE can be shadowed by a redirect.
+ *
+ * A DIRECTORY is not a target, for the same reason it is not a page — and
+ * widening this to `existsSync` reopened, one commit later, the exact bug the
+ * commit before it had fixed. `/old/ → /properties/` passed while the live URL
+ * 404'd, on a dist shape a real site has.
  */
 function targetExists(distRoot, urlPath) {
   const clean = urlPath.split(/[?#]/)[0].replace(/^\//, "").replace(/\/$/, "");
-  return pageExists(distRoot, urlPath) || (clean !== "" && existsSync(join(distRoot, clean)));
+  if (pageExists(distRoot, urlPath)) return true;
+  if (clean === "") return false;
+  const asFile = join(distRoot, clean);
+  return existsSync(asFile) && statSync(asFile).isFile();
 }
 
 export function checkRedirects(config, report) {
@@ -210,7 +228,10 @@ export function checkRedirects(config, report) {
     const prefix = stripSlash(String(w.from).replace(/\/\*$/, ""));
     // Three shapes of the same journey, so a rule is checked on what it
     // promises the author rather than on the one path someone thought of.
-    const samples = [`${prefix}/a`, `${prefix}/a/b`, `${prefix}/a-b-c/`];
+    // Deliberately unlikely tails. Literal `a` and `a/b` collided with a real
+    // carve-out at `/portfolio/a/` on a correct site, and the wildcard check
+    // reported the carve-out's own destination as a mismatch.
+    const samples = [`${prefix}/zq7probe`, `${prefix}/zq7probe/inner`, `${prefix}/zq7probe-2/`];
     const expected = (path) => {
       const tail = path.slice(prefix.length).replace(/^\//, "");
       return String(w.to).includes("*") ? String(w.to).replace("*", () => tail) : String(w.to);

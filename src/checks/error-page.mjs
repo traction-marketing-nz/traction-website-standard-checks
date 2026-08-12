@@ -39,36 +39,45 @@ export function checkErrorPage(config, report) {
   }
 
   const routes = JSON.parse(readFileSync(configPath, "utf8")).routes ?? [];
-  const errorAt = routes.findIndex((r) => r.handle === "error");
-  if (errorAt === -1) {
+
+  // Check the BEHAVIOUR, not the mechanism. An earlier version of this demanded
+  // an `error` phase, and reported a perfectly good site as broken: it served
+  // its branded 404 from a catch-all placed after `filesystem`, which reaches
+  // exactly the same outcome. Insisting on one spelling of a correct answer is
+  // how a shared check earns a reputation for crying wolf and gets switched off.
+  //
+  // What has to be true is only this: a path that matches no real file ends up
+  // at 404.html, with status 404.
+  const filesystemAt = routes.findIndex((r) => r.handle === "filesystem");
+  if (filesystemAt === -1) {
     report.fail(
       NAME,
-      `The branded 404 ships inside the deployment with NOTHING pointing at it — the route table has no ` +
-        `\`error\` phase, so the host serves its own card instead.`,
+      `${config.vercelConfig} has no \`filesystem\` phase, so where the branded 404 sits relative to real ` +
+        `files could not be determined. Do not read this build as proof it is served.`,
     );
     return;
   }
 
-  const served = routes.slice(errorAt).some((r) => typeof r.dest === "string" && r.dest.includes("404"));
-  if (!served) {
+  const catchAll = routes
+    .slice(filesystemAt)
+    .find((r) => typeof r.dest === "string" && /404/.test(r.dest) && (!r.src || new RegExp(r.src).test("/no-such-page-xyz")));
+
+  if (!catchAll) {
     report.fail(
       NAME,
-      `The route table has an \`error\` phase but nothing in it serves 404.html, so the branded page is ` +
-        `built and unreachable.`,
+      `The branded 404 ships inside the deployment with NOTHING pointing at it — no route after the ` +
+        `filesystem sends an unmatched path to 404.html, so the host serves its own card instead.`,
     );
     return;
   }
 
   // A 404 that answers 200 is worse than the platform card: crawlers index it
   // as a real page and the site accumulates duplicate thin content.
-  const wrongStatus = routes
-    .slice(errorAt)
-    .find((r) => typeof r.dest === "string" && r.dest.includes("404") && r.status && r.status !== 404);
-  if (wrongStatus) {
+  if ((catchAll.status ?? 200) !== 404) {
     report.fail(
       NAME,
-      `The branded 404 is served with status ${wrongStatus.status}. A 404 page that answers ${wrongStatus.status} ` +
-        `gets indexed as a real page.`,
+      `The branded 404 is served with status ${catchAll.status ?? 200}. A 404 page that answers ` +
+        `${catchAll.status ?? 200} gets indexed as a real page.`,
     );
   }
 

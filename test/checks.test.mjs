@@ -183,6 +183,22 @@ test("built-html: an unsized image warns but does not block, until promoted", ()
   rmSync(strict, { recursive: true, force: true });
 });
 
+test("error-page: a catch-all AFTER filesystem is accepted — the outcome, not the phase", () => {
+  // A site that serves its branded 404 from a catch-all rather than an `error`
+  // phase reaches the same outcome. An earlier version demanded the phase and
+  // reported a correct site as broken.
+  const root = site({
+    "dist/client/404.html": PAGE,
+    ".vercel/output/config.json": {
+      version: 3,
+      routes: [{ handle: "filesystem" }, { src: "^/.*$", dest: "/404.html", status: 404 }],
+    },
+  });
+  const { report } = run({ root, only: ["errorPage"] });
+  assert.equal(report.ok, true, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("error-page: a 404 that is built but unrouted fails", () => {
   const root = site({
     "dist/client/index.html": PAGE,

@@ -1,6 +1,6 @@
 {
   "name": "@traction/site-checks",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The Website Architecture Standard's gate items, as checks that run.",
   "type": "module",
   "bin": {

@@ -418,6 +418,9 @@ const LIST_CASES = [
   ["a malformed wildcard", [{ from: "/a/*/b", to: "/c/", status: 301 }], /must end in exactly one/],
   ["two stars in a destination", [{ from: "/a/*", to: "/b/*/*", status: 301 }], /at most one/],
   ["a star with nothing to expand", [{ from: "/a/", to: "/b/*", status: 301 }], /nothing to expand/],
+  ["a protocol-relative destination", [{ from: "/a/", to: "//evil.test/x", status: 301 }], /protocol-relative/],
+  ["a protocol-relative source", [{ from: "//evil.test/", to: "/b/", status: 301 }], /not a path on this site/],
+  ["a capture reference in the destination", [{ from: "/a/", to: "/b/$1/", status: 301 }], /capture-group reference/],
   ["a slashed twin of the same source", [{ from: "/a", to: "/b/", status: 301 }, { from: "/a/", to: "/c/", status: 301 }], /already redirected/],
 ];
 

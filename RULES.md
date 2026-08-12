@@ -18,6 +18,8 @@ Reads `content/redirects.json` alone; needs no build.
 | **A source that is not site-relative**, or a destination that is neither site-relative nor `https://` | A redirect to `http://` downgrades the visitor's connection. A relative source silently never matches. |
 | **A status outside 301/302/307/308** | A 301 is the only one that transfers ranking, which is usually the point; the others are legitimate but deliberate. Anything else is a typo. |
 | **A control character in either field** | The destination becomes a `Location` header. A newline in a header is an injection vector, and never something an author meant. |
+| **A protocol-relative destination** (`//evil.test/x`) | Starts with a slash, so a naive "is it site-relative" test passes it, while it sends the visitor to another origin entirely. An **open redirect** — the one rule here that is a security control rather than a quality one. |
+| **A `$` in the destination** | The host reads it as a capture-group reference and rewrites the URL, so the visitor lands somewhere nobody wrote. |
 | **A path traversal** (`..` or `%2e%2e` in the destination) | Escapes the site's own path space. Checked in both literal and encoded form, because checking one is checking neither. |
 | **Malformed wildcard syntax** | A `from` must end in exactly one `/*`, and a `to` may carry at most one `*`. A `to` with a star whose `from` has none has nothing to expand into it. Malformed wildcards emit a route matching a literal asterisk and nothing else. |
 

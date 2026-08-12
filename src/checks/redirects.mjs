@@ -1,0 +1,185 @@
+/**
+ * Redirects (§3.7) — emitted, matching, and landing somewhere real.
+ *
+ * THE FAILURE THIS EXISTS FOR. On a live site every redirect returned 404 and
+ * had for weeks, while the build printed clean on every deploy. Astro compiles
+ * an exact rule's source with the trailing slash STRIPPED — `/expertise/`
+ * becomes `^/expertise$`, which does not match a request for `/expertise/` —
+ * and every source is written WITH the slash, because that is the form the site
+ * serves and the form inbound links and the search index carry. So the working
+ * form was the one nobody requests, and every spot check landed on it.
+ *
+ * The assertion for exactly this already existed on that site. It sat inside a
+ * loop over WILDCARD rules, written while chasing a wildcard bug; the site had
+ * no wildcards, so it never ran. Nothing here is allowed to be scoped to the
+ * feature that motivated it: the behaviour is "the URL redirects", so every
+ * rule is checked, in both forms, every build.
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const isWildcard = (r) => String(r.from).includes("*") || String(r.to).includes("*");
+const stripSlash = (p) => (p === "/" ? "/" : p.replace(/\/+$/, ""));
+
+/** Rules may be a bare array, or an object with a `redirects` key and comments. */
+function readRules(file) {
+  const parsed = JSON.parse(readFileSync(file, "utf8"));
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed?.redirects)) return parsed.redirects;
+  throw new Error(`${file}: expected an array of rules, or an object with a "redirects" array.`);
+}
+
+/** Does a built page exist at this path? */
+function pageExists(distRoot, urlPath) {
+  const clean = urlPath.split(/[?#]/)[0].replace(/^\//, "");
+  const asDir = join(distRoot, clean, "index.html");
+  const asFile = join(distRoot, clean.replace(/\/$/, "") + ".html");
+  return existsSync(asDir) || existsSync(asFile) || existsSync(join(distRoot, clean));
+}
+
+export function checkRedirects(config, report) {
+  const NAME = "redirects";
+  const rulesPath = join(config.root, config.redirectsFile);
+
+  if (!existsSync(rulesPath)) {
+    report.skip(NAME, `${config.redirectsFile} does not exist — this site declares no redirects.`);
+    return;
+  }
+
+  const rules = readRules(rulesPath);
+  if (rules.length === 0) {
+    report.skip(NAME, `${config.redirectsFile} is empty.`);
+    return;
+  }
+
+  const configPath = join(config.root, config.vercelConfig);
+  // Fail CLOSED, for any rule. A missing route table means nothing could be
+  // checked — which is not the same as nothing being wrong, and must never
+  // read as a pass.
+  if (!existsSync(configPath)) {
+    report.fail(
+      NAME,
+      `${rules.length} redirect(s) are configured but ${config.vercelConfig} does not exist, so none of ` +
+        `them could be checked. Do not read this build as proof they work.`,
+    );
+    return;
+  }
+
+  const routes = JSON.parse(readFileSync(configPath, "utf8")).routes ?? [];
+  const filesystemAt = routes.findIndex((r) => r.handle === "filesystem");
+  if (filesystemAt === -1) {
+    report.fail(
+      NAME,
+      `${config.vercelConfig} has no \`filesystem\` phase, so no redirect's position could be checked ` +
+        `against it. Do not read this build as proof any of them work.`,
+    );
+    return;
+  }
+
+  /** The first redirecting route that wins for `path`, before the filesystem serves a file. */
+  const resolve = (path) => {
+    const at = routes.findIndex(
+      (r, i) => i < filesystemAt && r.src && r.headers?.Location && new RegExp(r.src).test(path),
+    );
+    if (at === -1) return null;
+    const tail = new RegExp(routes[at].src).exec(path)?.[1] ?? "";
+    return {
+      to: routes[at].headers.Location.replace("$1", () => tail),
+      status: routes[at].status ?? 301,
+      at,
+    };
+  };
+
+  const exempt = new Map(
+    config.allow.redirectSlashExceptions.map((e) => [stripSlash(e.from), e.reason]),
+  );
+  const exact = rules.filter((r) => !isWildcard(r));
+  let examined = 0;
+
+  for (const rule of exact) {
+    const bare = stripSlash(rule.from);
+    const forms = bare === "/" ? ["/"] : [bare, `${bare}/`];
+
+    for (const form of forms) {
+      // A declared exception, because a real route can legitimately occupy one
+      // form: a site with a `properties/[slug]` directory cannot also redirect
+      // `/properties/`, and a redirect emitted ahead of the filesystem would
+      // SHADOW that live page. The exception is per-source and carries a
+      // reason, so waiving it stays a decision somebody made rather than a gap.
+      const skipSlashed = form.endsWith("/") && form !== "/" && exempt.has(bare);
+      if (skipSlashed) continue;
+
+      examined += 1;
+      const hit = resolve(form);
+
+      if (!hit) {
+        report.fail(
+          NAME,
+          `"${rule.from}" is in ${config.redirectsFile}, but a request for ${form} matches no redirect ` +
+            `before the filesystem — it falls through and 404s. Sources are written with a trailing ` +
+            `slash and the framework compiles them without one, so BOTH forms have to be emitted.`,
+        );
+        continue;
+      }
+      if (hit.to !== rule.to) {
+        report.fail(
+          NAME,
+          `"${rule.from}": a request for ${form} lands on ${hit.to} instead of ${rule.to}.`,
+        );
+        continue;
+      }
+      if (hit.status !== (rule.status ?? 301)) {
+        report.fail(
+          NAME,
+          `"${rule.from}" is written as a ${rule.status ?? 301} but ${form} is emitted as a ` +
+            `${hit.status}. A 302 where a 301 was written forfeits the ranking transfer, which is ` +
+            `the whole point of the file.`,
+        );
+      }
+    }
+
+    // The destination has to be a page someone can read. A rule that redirects
+    // correctly INTO a 404 is worse than the broken link it replaced: the
+    // visitor still gets nothing, and the search engine is now told the old URL
+    // permanently moved there.
+    if (!isWildcard(rule) && !/^[a-z]+:/i.test(rule.to) && config.distDir) {
+      const distRoot = join(config.root, config.distDir);
+      if (!pageExists(distRoot, rule.to)) {
+        report.fail(
+          NAME,
+          `"${rule.from}" redirects to ${rule.to}, but no page was built there. The redirect works ` +
+            `and sends every visitor and crawler to a 404.`,
+        );
+      }
+    }
+  }
+
+  // A wildcard must not shadow an exact rule inside its prefix, in either form.
+  for (const w of rules.filter(isWildcard)) {
+    const prefix = stripSlash(String(w.from).replace(/\/\*$/, ""));
+    for (const e of exact) {
+      const bare = stripSlash(e.from);
+      if (!(bare === prefix || bare.startsWith(`${prefix}/`))) continue;
+      for (const form of [bare, `${bare}/`]) {
+        if (form.endsWith("/") && form !== "/" && exempt.has(bare)) continue;
+        const hit = resolve(form);
+        if (hit && hit.to !== e.to) {
+          report.fail(
+            NAME,
+            `"${e.from}" is a specific redirect inside "${w.from}", but ${form} lands on ${hit.to} ` +
+              `instead of ${e.to} — the wildcard shadows it, so the carve-out only works for ` +
+              `whichever slash form you do not type.`,
+          );
+        }
+      }
+    }
+  }
+
+  report.examined(NAME, examined);
+  for (const [from, reason] of exempt) {
+    report.skip(NAME, `${from}/ exempt from the both-forms rule — ${reason}`);
+  }
+}
+
+export const _internals = { escapeRe, isWildcard, stripSlash, pageExists };

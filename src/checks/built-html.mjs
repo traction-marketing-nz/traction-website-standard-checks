@@ -31,12 +31,17 @@ function htmlFiles(dir, acc = []) {
   return acc;
 }
 
-/** Strip comments and script/style bodies before looking for stray syntax. */
+/**
+ * Strip comments and script bodies before looking for stray syntax.
+ *
+ * NOT style bodies. An earlier version stripped those too, and lost the ability
+ * to see `<style>.a{color:${accent}}</style>` — a real construct in these
+ * codebases, where a block emits CSS from a template literal. That is the same
+ * shape as the incident this check was written for, and the collapsed-stylesheet
+ * check does not cover it: the block is not empty, it is wrong.
+ */
 const withoutInert = (html) =>
-  html
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+  html.replace(/<!--[\s\S]*?-->/g, "").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
 
 export function checkBuiltHtml(config, report) {
   if (!config.distDir) {
@@ -106,15 +111,26 @@ export function checkBuiltHtml(config, report) {
         report.fail(NAME, `${rel(file)}: an <img> has no alt attribute — ${tag.slice(0, 90)}`, { rule: "alt" });
       }
       // The rule is about LAYOUT SHIFT, so the check has to be about layout
-      // shift — not about the presence of two attributes. An image that is
-      // absolutely positioned, or told to fill its box, reserves no space in
-      // the flow and cannot move anything when it loads. Flagging those was
-      // most of the first run's output on a site with none of the defect, and
-      // a check that cries wolf on correct code gets switched off.
+      // shift — not the presence of two attributes.
+      //
+      // It only fires on an image sized by NOTHING: no width/height, no inline
+      // size, and no class. A class means the size probably lives in a
+      // stylesheet, and this reads HTML, not CSS — it cannot tell. A reviewer
+      // checked all 184 findings from the first version against the real
+      // stylesheets and every single one was sized by its class: 184 of 184
+      // false positives, on a rule whose own comment says a check that cries
+      // wolf on correct code gets switched off. Worse, the site could never
+      // reach a state where the rule could be promoted, so the ratchet this
+      // package advertises did not exist for the rule generating the noise.
+      //
+      // The cost of the narrower rule is real and accepted: an image sized by
+      // a class that does NOT set a size slips through. Catching that needs
+      // the CSS, which is a different tool.
       const style = /\bstyle=["']([^"']*)["']/.exec(tag)?.[1] ?? "";
       const sizedByCss =
+        /\bclass=/.test(tag) ||
         /position\s*:\s*absolute|position\s*:\s*fixed/.test(style) ||
-        (/(^|;)\s*width\s*:/.test(style) && /(^|;)\s*height\s*:/.test(style));
+        /(^|;)\s*(width|height|aspect-ratio)\s*:/.test(style);
       const hasIntrinsic = /\bwidth=/.test(tag) && /\bheight=/.test(tag);
       if (!hasIntrinsic && !sizedByCss && !exempt("dimensions", file)) {
         report.warn(NAME, `${rel(file)}: an <img> has no intrinsic width/height and no CSS size, so it shifts the layout as it loads — ${tag.slice(0, 90)}`, { rule: "dimensions" });

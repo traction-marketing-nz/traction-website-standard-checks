@@ -159,6 +159,92 @@ test("redirects: a DIRECTORY with no index.html is not a page, and is not shadow
   rmSync(root, { recursive: true, force: true });
 });
 
+test("redirects: a wildcard that was never emitted fails", () => {
+  // The mirror of the failure this package was built after. An earlier version
+  // only asked whether a wildcard SHADOWED an exact rule, so a site whose
+  // redirects were entirely wildcards could emit none of them and pass.
+  const root = site({
+    "content/redirects.json": [{ from: "/portfolio/*", to: "/our-work/*", status: 301 }],
+    ".vercel/output/config.json": routes(),
+    "dist/client/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["redirects"] });
+  assert.equal(report.ok, false);
+  assert.match(messages(report), /matches no redirect before the filesystem/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("redirects: a wildcard that expands to the wrong place fails", () => {
+  const root = site({
+    "content/redirects.json": [{ from: "/portfolio/*", to: "/our-work/*", status: 301 }],
+    ".vercel/output/config.json": routes([
+      { src: "^/portfolio(?:/(.*))?$", headers: { Location: "/our-work/" }, status: 301 },
+    ]),
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["redirects"] });
+  assert.equal(report.ok, false);
+  assert.match(messages(report), /the rule promises \/our-work\/a/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("redirects: a correctly emitted wildcard passes", () => {
+  const root = site({
+    "content/redirects.json": [{ from: "/portfolio/*", to: "/our-work/*", status: 301 }],
+    ".vercel/output/config.json": routes([
+      { src: "^/portfolio(?:/(.*))?$", headers: { Location: "/our-work/$1" }, status: 301 },
+    ]),
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["redirects"] });
+  assert.equal(report.ok, true, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("redirects: a destination that is an ASSET, not a page, is accepted", () => {
+  // /brochure/ -> /files/brochure.pdf is an ordinary redirect. Failing it
+  // blocks a deploy over correct content.
+  const root = site({
+    "content/redirects.json": [{ from: "/brochure/", to: "/files/brochure.pdf", status: 301 }],
+    ".vercel/output/config.json": routes([
+      { src: "^/brochure/?$", headers: { Location: "/files/brochure.pdf" }, status: 301 },
+    ]),
+    "dist/client/files/brochure.pdf": "%PDF-1.4",
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["redirects"] });
+  assert.equal(report.ok, true, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("built-html: an uninterpolated literal INSIDE a <style> block is caught", () => {
+  // A block emitting CSS from a template literal is a real construct here, and
+  // stripping style bodies before the scan lost exactly that case.
+  const root = site({
+    "dist/client/index.html": PAGE.replace("</head>", "<style>.a{color:${accent};}</style></head>"),
+    "dist/client/404.html": PAGE,
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["builtHtml"] });
+  assert.equal(report.ok, false);
+  assert.match(messages(report), /uninterpolated template literal/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("built-html: an image sized by a CLASS is not reported", () => {
+  // 184 of 184 findings from the first version were this: sized in a
+  // stylesheet, which this check cannot read.
+  const root = site({
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>", `<h1>H</h1><img class="tile__img" src="/a.png" alt="a">`),
+    "dist/client/404.html": PAGE,
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["builtHtml"] });
+  assert.equal(report.findings.length, 0, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("built-html: a collapsed stylesheet fails", () => {
   const root = site({
     "dist/client/index.html": PAGE.replace("<body>", "<style></style><body>"),

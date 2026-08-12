@@ -43,6 +43,20 @@ function pageExists(distRoot, urlPath) {
   return existsSync(join(distRoot, clean, "index.html")) || existsSync(join(distRoot, `${clean}.html`));
 }
 
+/**
+ * Does the build produce ANYTHING at this path — a page, or a file?
+ *
+ * A destination is allowed to be an asset. `/brochure/ → /files/brochure.pdf`
+ * is an ordinary redirect, and an earlier version failed the build on it
+ * because it looked only for HTML: a false failure that blocks a deploy, which
+ * is how a shared checker gets deleted. Shadowing still asks the narrower
+ * question, because only a PAGE can be shadowed by a redirect.
+ */
+function targetExists(distRoot, urlPath) {
+  const clean = urlPath.split(/[?#]/)[0].replace(/^\//, "").replace(/\/$/, "");
+  return pageExists(distRoot, urlPath) || (clean !== "" && existsSync(join(distRoot, clean)));
+}
+
 export function checkRedirects(config, report) {
   const NAME = "redirects";
   const rulesPath = join(config.root, config.redirectsFile);
@@ -176,12 +190,57 @@ export function checkRedirects(config, report) {
     // permanently moved there.
     if (!isWildcard(rule) && !/^[a-z]+:/i.test(rule.to) && config.distDir) {
       const distRoot = join(config.root, config.distDir);
-      if (!pageExists(distRoot, rule.to)) {
+      if (!targetExists(distRoot, rule.to)) {
         report.fail(
           NAME,
           `"${rule.from}" redirects to ${rule.to}, but no page was built there. The redirect works ` +
             `and sends every visitor and crawler to a 404.`,
         );
+      }
+    }
+  }
+
+  // WILDCARDS get checked in their own right, not merely as a hazard to exact
+  // rules. An earlier version only asked whether a wildcard shadowed a
+  // carve-out, so a site whose redirects were ENTIRELY wildcards could emit
+  // none of them and still get a green tick — the exact mirror of the failure
+  // this package was built after, and the anti-vacuous-pass floor did not
+  // notice because the HTML check had examined plenty.
+  for (const w of rules.filter(isWildcard)) {
+    const prefix = stripSlash(String(w.from).replace(/\/\*$/, ""));
+    // Three shapes of the same journey, so a rule is checked on what it
+    // promises the author rather than on the one path someone thought of.
+    const samples = [`${prefix}/a`, `${prefix}/a/b`, `${prefix}/a-b-c/`];
+    const expected = (path) => {
+      const tail = path.slice(prefix.length).replace(/^\//, "");
+      return String(w.to).includes("*") ? String(w.to).replace("*", () => tail) : String(w.to);
+    };
+
+    for (const path of samples) {
+      examined += 1;
+      const hit = resolve(path);
+      if (!hit) {
+        report.fail(
+          NAME,
+          `"${w.from}" is in ${config.redirectsFile}, but a request for ${path} matches no redirect ` +
+            `before the filesystem — the wildcard reached the route table not at all, or too late to run.`,
+        );
+        break;
+      }
+      if (hit.to !== expected(path)) {
+        report.fail(
+          NAME,
+          `"${w.from}": ${path} lands on ${hit.to}, but the rule promises ${expected(path)}. ` +
+            `The editor offers this expansion to an author, so it has to be the one that happens.`,
+        );
+        break;
+      }
+      if (hit.status !== (w.status ?? 301)) {
+        report.fail(
+          NAME,
+          `"${w.from}" is written as a ${w.status ?? 301} but ${path} is emitted as a ${hit.status}.`,
+        );
+        break;
       }
     }
   }
@@ -213,4 +272,4 @@ export function checkRedirects(config, report) {
   }
 }
 
-export const _internals = { escapeRe, isWildcard, stripSlash, pageExists };
+export const _internals = { isWildcard, stripSlash, pageExists, targetExists };

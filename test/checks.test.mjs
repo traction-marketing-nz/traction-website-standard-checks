@@ -127,6 +127,23 @@ test("redirects: no route table at all fails closed, rather than passing quietly
   rmSync(root, { recursive: true, force: true });
 });
 
+test("redirects: a redirect that shadows a real page fails", () => {
+  // The failure mutation found: emitter and checker can agree with each other
+  // and still be wrong. Only the built output settles it.
+  const root = site({
+    "content/redirects.json": [{ from: "/properties", to: "/", status: 301 }],
+    ".vercel/output/config.json": routes([{ src: "^/properties/?$", headers: { Location: "/" }, status: 301 }]),
+    "dist/client/index.html": PAGE,
+    "dist/client/properties/a-street/index.html": PAGE,
+    "dist/client/properties/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["redirects"] });
+  assert.equal(report.ok, false);
+  assert.match(messages(report), /a real page is built there/);
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("built-html: a collapsed stylesheet fails", () => {
   const root = site({
     "dist/client/index.html": PAGE.replace("<body>", "<style></style><body>"),

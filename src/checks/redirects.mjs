@@ -108,6 +108,32 @@ export function checkRedirects(config, report) {
       // SHADOW that live page. The exception is per-source and carries a
       // reason, so waiving it stays a decision somebody made rather than a gap.
       const skipSlashed = form.endsWith("/") && form !== "/" && exempt.has(bare);
+
+      // A redirect must never shadow a page that EXISTS. Routes sit ahead of
+      // the filesystem, so if a real page lives at this URL the redirect wins
+      // and the page becomes unreachable.
+      //
+      // Found by mutation, and it is the reason this check is here rather than
+      // trusted to the exception list: deleting a site's declared exception
+      // made the emitter produce the shadowing route AND made the checker stop
+      // expecting the exception, so the two agreed with each other and the
+      // suite passed while every property page went dark. Two halves of one
+      // rule can agree and still be wrong; only the built output settles it.
+      if (config.distDir) {
+        const shadowed = pageExists(join(config.root, config.distDir), form);
+        const hit = resolve(form);
+        if (shadowed && hit) {
+          report.fail(
+            NAME,
+            `"${rule.from}" emits a redirect for ${form}, but a real page is built there. Redirects run ` +
+              `BEFORE the filesystem, so that page is now unreachable — every visitor and crawler is sent ` +
+              `to ${hit.to} instead. Declare the exception in site-checks.config.json if the redirect is ` +
+              `wanted for the other slash form only.`,
+          );
+          continue;
+        }
+      }
+
       if (skipSlashed) continue;
 
       examined += 1;

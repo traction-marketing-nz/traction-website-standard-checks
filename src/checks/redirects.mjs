@@ -30,12 +30,17 @@ function readRules(file) {
   throw new Error(`${file}: expected an array of rules, or an object with a "redirects" array.`);
 }
 
-/** Does a built page exist at this path? */
+/**
+ * Does a built page exist at this path — one the host would actually serve?
+ *
+ * A DIRECTORY is not a page. `dist/properties/` exists on a site whose only
+ * pages are `properties/<slug>/index.html`, and counting it as a page reported
+ * a correct site as shadowing something that was never there. The filesystem
+ * handler serves `index.html`, so that is what has to be present.
+ */
 function pageExists(distRoot, urlPath) {
-  const clean = urlPath.split(/[?#]/)[0].replace(/^\//, "");
-  const asDir = join(distRoot, clean, "index.html");
-  const asFile = join(distRoot, clean.replace(/\/$/, "") + ".html");
-  return existsSync(asDir) || existsSync(asFile) || existsSync(join(distRoot, clean));
+  const clean = urlPath.split(/[?#]/)[0].replace(/^\//, "").replace(/\/$/, "");
+  return existsSync(join(distRoot, clean, "index.html")) || existsSync(join(distRoot, `${clean}.html`));
 }
 
 export function checkRedirects(config, report) {

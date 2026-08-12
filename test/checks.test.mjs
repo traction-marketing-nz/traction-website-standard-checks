@@ -135,12 +135,27 @@ test("redirects: a redirect that shadows a real page fails", () => {
     ".vercel/output/config.json": routes([{ src: "^/properties/?$", headers: { Location: "/" }, status: 301 }]),
     "dist/client/index.html": PAGE,
     "dist/client/properties/a-street/index.html": PAGE,
-    "dist/client/properties/index.html": PAGE,
+    "dist/client/properties/index.html": PAGE,   // a real index page — this is what makes it shadowing
     "dist/client/404.html": PAGE,
   });
   const { report } = run({ root, only: ["redirects"] });
   assert.equal(report.ok, false);
   assert.match(messages(report), /a real page is built there/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("redirects: a DIRECTORY with no index.html is not a page, and is not shadowing", () => {
+  // dist/properties/ exists on a site whose only pages are properties/<slug>/.
+  // Counting the directory as a page reported a correct site as broken.
+  const root = site({
+    "content/redirects.json": [{ from: "/properties", to: "/", status: 301 }],
+    ".vercel/output/config.json": routes([{ src: "^/properties/?$", headers: { Location: "/" }, status: 301 }]),
+    "dist/client/index.html": PAGE,
+    "dist/client/properties/a-street/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["redirects"] });
+  assert.equal(report.ok, true, messages(report));
   rmSync(root, { recursive: true, force: true });
 });
 

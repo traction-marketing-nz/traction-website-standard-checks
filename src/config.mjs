@@ -21,6 +21,7 @@ const DEFAULTS = {
   redirectsFile: "content/redirects.json",
   /** Turn a check off only with a reason recorded beside it. */
   checks: {
+    redirectList: true,
     redirects: true,
     builtHtml: true,
     errorPage: true,

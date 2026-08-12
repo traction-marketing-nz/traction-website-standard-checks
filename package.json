@@ -1,6 +1,6 @@
 {
   "name": "@traction/site-checks",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "The Website Architecture Standard's gate items, as checks that run.",
   "type": "module",
   "bin": {
@@ -10,7 +10,7 @@
     ".": "./src/run.mjs",
     "./checks/*": "./src/checks/*.mjs"
   },
-  "files": ["bin", "src", "README.md"],
+  "files": ["bin", "src", "README.md", "RULES.md"],
   "scripts": {
     "test": "node --test test/*.test.mjs"
   },

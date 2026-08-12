@@ -8,11 +8,15 @@
  */
 import { loadConfig } from "./config.mjs";
 import { Report } from "./report.mjs";
+import { checkRedirectList } from "./checks/redirect-list.mjs";
 import { checkRedirects } from "./checks/redirects.mjs";
 import { checkBuiltHtml } from "./checks/built-html.mjs";
 import { checkErrorPage } from "./checks/error-page.mjs";
 
 const REGISTRY = {
+  // The list first: rules that are not legal cannot be usefully checked against
+  // a route table, and a self-referential rule is an outage no table can rescue.
+  redirectList: checkRedirectList,
   redirects: checkRedirects,
   builtHtml: checkBuiltHtml,
   errorPage: checkErrorPage,

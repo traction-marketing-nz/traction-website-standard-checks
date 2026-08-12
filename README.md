@@ -29,13 +29,16 @@ traction-site check --root ../other-site   # somewhere else
 
 ## What it checks
 
-| Check | What it refuses to ship |
+| Check | Reads |
 |---|---|
-| `redirects` | A rule that matches only one slash form; a destination that was never built; a 302 where a 301 was written; a wildcard shadowing a carve-out; a missing route table (fails closed). §3.7 |
-| `builtHtml` | A collapsed `<style></style>`; an uninterpolated `${…}` on the page; a missing title, description or canonical; not exactly one `<h1>`; JSON-LD that does not parse. Warns on images with no dimensions and hotlinked assets. §4.4, §8 |
-| `errorPage` | A branded 404 that is built but not routed, or served with a status other than 404. §3.7.3 |
+| `redirectList` | `content/redirects.json` alone — is this a legal set of rules? |
+| `redirects` | the emitted route table and the built output — did they reach the host, and do they work? |
+| `builtHtml` | the pages a visitor receives |
+| `errorPage` | the branded 404 — built *and* routed |
 
-Everything reads the **built output**, not the source that produced it. Each of these passed a compile, a typecheck and a review on the site where it was found.
+**[RULES.md](RULES.md) is the source of truth for every rule and the failure it was written after.** It is not summarised here, and it is not restated in the Website Architecture Standard, which points at it. A rule written in two places drifts — and did, within hours, between exactly those two documents.
+
+Everything reads the **built output**, not the source that produced it.
 
 ## Errors vs warnings
 
@@ -59,7 +62,7 @@ Sites genuinely differ, and a shared checker that pretends otherwise breaks work
   "distDir": "dist/client",              // auto-detected: dist/client, then dist
   "vercelConfig": ".vercel/output/config.json",
   "redirectsFile": "content/redirects.json",
-  "checks": { "redirects": true, "builtHtml": true, "errorPage": true },
+  "checks": { "redirectList": true, "redirects": true, "builtHtml": true, "errorPage": true },
   "promote": ["dimensions"],
   "allow": {
     // A real route can legitimately occupy the slashed form — emitting the
@@ -84,4 +87,4 @@ A check that examines nothing must never print a tick. Individual checks say whe
 npm test
 ```
 
-Fifteen cases, each asserting **both** that a clean fixture passes and that the broken one fails *with a message naming the offender*. A test that only asserted failure would be satisfied by a check that fails on everything.
+Thirty-nine cases, each asserting **both** that a clean fixture passes and that the broken one fails *with a message naming the offender*. A test that only asserted failure would be satisfied by a check that fails on everything.

@@ -396,3 +396,48 @@ test("the suite refuses to pass having examined nothing", () => {
   assert.match(messages(report), /examined NOTHING/);
   rmSync(root, { recursive: true, force: true });
 });
+
+/**
+ * The rule list itself. These two rules existed on two sites as two separate
+ * hand-written implementations before they existed here — the exact forking
+ * this package was built to end, still going on inside an area it already
+ * covered.
+ */
+const listOnly = (rules, extra = {}) =>
+  site({ "content/redirects.json": rules, "dist/client/404.html": PAGE, ...extra });
+
+const LIST_CASES = [
+  ["a self-reference", [{ from: "/a/", to: "/a/", status: 301 }], /redirects to itself/],
+  ["a chain", [{ from: "/a/", to: "/b/", status: 301 }, { from: "/b/", to: "/c/", status: 301 }], /is a chain/],
+  ["a duplicate source", [{ from: "/a/", to: "/b/", status: 301 }, { from: "/a/", to: "/c/", status: 301 }], /already redirected/],
+  ["a relative source", [{ from: "a/", to: "/b/", status: 301 }], /must be a site-relative path/],
+  ["an http destination", [{ from: "/a/", to: "http://x.test/", status: 301 }], /site-relative path or an https URL/],
+  ["a bad status", [{ from: "/a/", to: "/b/", status: 418 }], /"status" must be one of/],
+  ["a path traversal", [{ from: "/a/", to: "/b/../../etc/", status: 301 }], /path traversal/],
+  ["an encoded traversal", [{ from: "/a/", to: "/b/%2e%2e/x/", status: 301 }], /path traversal/],
+  ["a malformed wildcard", [{ from: "/a/*/b", to: "/c/", status: 301 }], /must end in exactly one/],
+  ["two stars in a destination", [{ from: "/a/*", to: "/b/*/*", status: 301 }], /at most one/],
+  ["a star with nothing to expand", [{ from: "/a/", to: "/b/*", status: 301 }], /nothing to expand/],
+  ["a slashed twin of the same source", [{ from: "/a", to: "/b/", status: 301 }, { from: "/a/", to: "/c/", status: 301 }], /already redirected/],
+];
+
+for (const [label, rules, pattern] of LIST_CASES) {
+  test(`redirect list: refuses ${label}`, () => {
+    const root = listOnly(rules);
+    const { report } = run({ root, only: ["redirectList"] });
+    assert.equal(report.ok, false);
+    assert.match(messages(report), pattern);
+    rmSync(root, { recursive: true, force: true });
+  });
+}
+
+test("redirect list: accepts a legal list", () => {
+  const root = listOnly([
+    { from: "/a/", to: "/b/", status: 301 },
+    { from: "/old/*", to: "/new/*", status: 301 },
+    { from: "/x/", to: "https://elsewhere.test/y", status: 308 },
+  ]);
+  const { report } = run({ root, only: ["redirectList"] });
+  assert.equal(report.ok, true, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});

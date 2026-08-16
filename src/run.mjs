@@ -16,6 +16,7 @@ import { checkDescriptor } from "./checks/descriptor.mjs";
 import { checkSeoOutputs, checkStructuredData } from "./checks/seo-outputs.mjs";
 import { checkSecrets } from "./checks/secrets.mjs";
 import { checkSeoConsumed, checkTagManager, checkInternalLinks } from "./checks/consumed.mjs";
+import { checkTemplates, checkAuthorComplete, checkRoutesAreContent } from "./checks/model.mjs";
 
 const REGISTRY = {
   // The list first: rules that are not legal cannot be usefully checked against
@@ -34,6 +35,9 @@ const REGISTRY = {
   seoConsumed: checkSeoConsumed,
   tagManager: checkTagManager,
   internalLinks: checkInternalLinks,
+  templates: checkTemplates,
+  authorComplete: checkAuthorComplete,
+  routesAreContent: checkRoutesAreContent,
 };
 
 export function run({ root = process.cwd(), only = null } = {}) {

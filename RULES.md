@@ -115,6 +115,15 @@ Deliberately narrow: it matches key *shapes* with a recognisable provider prefix
 |---|---|
 | **A link to a page that was never built** | "All nav links resolve" is a checklist line somebody does by hand per template; the build knows the answer. The usual cause is a slug rename that a redirect covered while the link pointing at it was left alone. A link to a declared redirect source is not counted — it costs a hop, not a 404. |
 
+### `templates`, `authorComplete`, `routesAreContent` — §4.4, §4.4.1, §4.5
+
+| Warns | Why |
+|---|---|
+| **A page naming a template that does not exist** | Worse than naming none: a tool reads the name verbatim and offers to author content it cannot render (§4.6). |
+| **A page naming no template**, or a templates directory with no templates | Nothing decides what slots the page has, so "templates are data" is not true. |
+| **A prop with no label**, including an array's ITEM descriptor | An author sees a humanised key instead of a name. "It inherits from the array" is a reasoning the generator can hold and no downstream reader can — one site shipped nine repeaters with raw-key row headers while passing its own label check (§4.4.1). |
+| **Far more built routes than content files** | A route with no content file is a page whose content or layout lives in framework code, which is what §4.4 refuses. Reported as a count, not a list: reconstructing each site's routing well enough to name a specific offender is a mapping that is right for one site and wrong for the next. |
+
 ---
 
 ## What this package cannot check

@@ -614,3 +614,41 @@ test("tag-manager: no container declared and none used is silent", () => {
   assert.match(report.skips.map((s) => s.reason).join(), /no tag-manager container id declared/);
   rmSync(root, { recursive: true, force: true });
 });
+
+test("templates: a page naming a template that does not exist is reported", () => {
+  const root = site({
+    "site.json": { paths: { templates: "templates", pages: "content/pages" } },
+    "templates/home.json": { slots: [] },
+    "content/pages/a.json": { template: "ghost" },
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["templates"] });
+  assert.equal(report.ok, true, "advisory");
+  assert.match(messages(report), /names template "ghost", which does not exist/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("author-complete: an array's ITEM descriptor needs its own label", () => {
+  // "It inherits from the array" is a reasoning the generator can hold and no
+  // downstream reader can — one site shipped nine repeaters with raw-key row
+  // headers while passing its own label check.
+  const root = site({
+    "site.json": { paths: { blockManifest: "b.json" } },
+    "b.json": { blocks: [{ name: "Faq", props: { items: { type: "array", label: "Questions", of: { type: "string" } } } }] },
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["authorComplete"] });
+  assert.match(messages(report), /Faq\.items\[\] \(item\)/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("author-complete: a fully laboured manifest is silent", () => {
+  const root = site({
+    "site.json": { paths: { blockManifest: "b.json" } },
+    "b.json": { blocks: [{ name: "Faq", props: { items: { type: "array", label: "Questions", of: { type: "string", label: "Question" } } } }] },
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["authorComplete"] });
+  assert.equal(report.findings.length, 0, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});

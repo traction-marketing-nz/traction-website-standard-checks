@@ -59,6 +59,42 @@ Warnings, which do not block: an image sized by nothing at all (layout shift), a
 | **A 404 page that is built but not routed** | The page ships inside the deployment with nothing pointing at it, so unknown URLs get the platform's bare card. Building the page is not serving it — the same distinction as emitting a redirect and serving one. Checked on the outcome, not on which routing phase does it. |
 | **A branded 404 served with any status but 404** | A 404 that answers 200 gets indexed as a real page, and the site accumulates duplicate thin content. |
 
+## Advisory gates
+
+Everything below **warns** rather than blocks. They were added to close the gap between the standard's gate list (§4.4) and launch checklist (§15) and what the package enforced — a site adopting them mid-life should see its whole gap at once, not be unable to deploy. Promote each per rule once it is clean.
+
+### `descriptor` — §4.4, §4.6
+
+| Warns / refuses | Why |
+|---|---|
+| **No `site.json`, or no `standardVersion`, or a missing `paths.*`** | Every tool downstream has to guess where content, templates and media live, and the guess is also what bounds an editor's path-safety check. |
+| **A collection describing its items by neither a `template` nor an `itemSchema`** | Its items are editable nowhere (§3.6). |
+| **A manifest describing ZERO blocks** — this one *fails* | A generator that ran, reported success and produced nothing. §4.4.1 exists for exactly this, and one site shipped it with every check passing. |
+
+### `seoOutputs` — §8, §15
+
+| Warns | Why |
+|---|---|
+| **No `sitemap.xml`, `robots.txt` or `llms.txt`** | Produced automatically from the model, which is precisely why nobody looks at them. |
+| **A sitemap URL with no page in the build** | A crawler's to-do list of 404s — worse than no sitemap. |
+| **`robots.txt` disallowing everything on a production build** | The site is live, looks perfect, and is invisible to search until somebody thinks to read a text file. Only fires when the build looks like production, because a local or preview build *should* disallow. |
+| **`robots.txt` not pointing at the sitemap** | |
+
+### `structuredData` — §8, §15
+
+| Warns | Why |
+|---|---|
+| **Two of the same SINGLETON entity on a page** (`Organization`, `WebSite`, `WebPage`, `BreadcrumbList`, `LocalBusiness`) | A search engine picks one arbitrarily or discards both. Only singletons: a team page legitimately carries many `Person` and a listing page many `Product`, and flagging those reported a correct page as broken on the first real run. |
+
+### `secrets` — §3.8.1, §15
+
+| Warns | Why |
+|---|---|
+| **A credential in `globals.json` or `site.json`** | Editable content is visible to anyone who can open the editor, and anything rendered from it is visible to the world. |
+| **A credential anywhere in the built output, client or server** | It has shipped. Treat the key as disclosed and rotate it. |
+
+Deliberately narrow: it matches key *shapes* with a recognisable provider prefix, not "anything that looks random", and it skips `node_modules`. The first version flagged a library's PEM-parsing source and told a site to rotate a key that does not exist — and a security check that cries wolf is one people stop reading, which is the worst outcome available.
+
 ---
 
 ## What this package cannot check
@@ -66,6 +102,8 @@ Warnings, which do not block: an image sized by nothing at all (layout shift), a
 **Prove one real redirect on a real deployment.** Everything here reads the build. That a host honours the table it was given is a separate claim, and the only way to settle it is to request the old path and read the status. Note that preview URLs often sit behind access protection that 302s anonymous requests to a login — an automated check sees *that*, not your redirect.
 
 **That a page looks right.** These checks catch a page that is broken, not one that is ugly.
+
+**The gate items that are human acts.** From §4.4 and §15: the editor↔git↔preview loop proven on a real page; the enquiry pipeline proven with a real submission and a real email that *arrives*; the fidelity gate at every breakpoint; the performance budget; the enquiry store being private and in-region; DNS and rollback. Each is listed here so the gap is visible rather than assumed covered.
 
 ## Errors, warnings, and exceptions
 

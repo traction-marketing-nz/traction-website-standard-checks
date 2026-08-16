@@ -35,6 +35,12 @@ traction-site check --root ../other-site   # somewhere else
 | `redirects` | the emitted route table and the built output — did they reach the host, and do they work? |
 | `builtHtml` | the pages a visitor receives |
 | `errorPage` | the branded 404 — built *and* routed |
+| `descriptor` | `site.json` and the block manifest — does the site describe itself? |
+| `seoOutputs` | sitemap, robots and llms.txt — do they describe the site that shipped? |
+| `structuredData` | JSON-LD entities, per page |
+| `secrets` | editable content and the built output, client *and* server |
+
+The last four are **advisory** — they warn and block nothing, so a site adopting them sees its whole gap at once. Promote each once it is clean.
 
 **[RULES.md](RULES.md) is the source of truth for every rule and the failure it was written after.** It is not summarised here, and it is not restated in the Website Architecture Standard, which points at it. A rule written in two places drifts — and did, within hours, between exactly those two documents.
 
@@ -87,4 +93,4 @@ A check that examines nothing must never print a tick. Individual checks say whe
 npm test
 ```
 
-Thirty-nine cases, each asserting **both** that a clean fixture passes and that the broken one fails *with a message naming the offender*. A test that only asserted failure would be satisfied by a check that fails on everything.
+Fifty cases, each asserting **both** that a clean fixture passes and that the broken one fails *with a message naming the offender*. A test that only asserted failure would be satisfied by a check that fails on everything.

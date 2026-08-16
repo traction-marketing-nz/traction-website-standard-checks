@@ -12,6 +12,9 @@ import { checkRedirectList } from "./checks/redirect-list.mjs";
 import { checkRedirects } from "./checks/redirects.mjs";
 import { checkBuiltHtml } from "./checks/built-html.mjs";
 import { checkErrorPage } from "./checks/error-page.mjs";
+import { checkDescriptor } from "./checks/descriptor.mjs";
+import { checkSeoOutputs, checkStructuredData } from "./checks/seo-outputs.mjs";
+import { checkSecrets } from "./checks/secrets.mjs";
 
 const REGISTRY = {
   // The list first: rules that are not legal cannot be usefully checked against
@@ -20,6 +23,13 @@ const REGISTRY = {
   redirects: checkRedirects,
   builtHtml: checkBuiltHtml,
   errorPage: checkErrorPage,
+  // Added as ADVISORY: everything below warns rather than blocks, so a site
+  // adopting the package mid-life sees its whole gap at once instead of being
+  // unable to deploy. Each is promoted per rule once it is clean.
+  descriptor: checkDescriptor,
+  seoOutputs: checkSeoOutputs,
+  structuredData: checkStructuredData,
+  secrets: checkSecrets,
 };
 
 export function run({ root = process.cwd(), only = null } = {}) {

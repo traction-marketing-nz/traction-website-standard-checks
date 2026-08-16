@@ -25,6 +25,10 @@ const DEFAULTS = {
     redirects: true,
     builtHtml: true,
     errorPage: true,
+    descriptor: true,
+    seoOutputs: true,
+    structuredData: true,
+    secrets: true,
   },
   /**
    * Warning rules a site has cleaned and wants to keep clean. Once "dimensions"

@@ -444,3 +444,104 @@ test("redirect list: accepts a legal list", () => {
   assert.equal(report.ok, true, messages(report));
   rmSync(root, { recursive: true, force: true });
 });
+
+/* ── The advisory gates ─────────────────────────────────────────────────── */
+
+const LD = (obj) => `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
+
+test("descriptor: a manifest describing ZERO blocks fails — §4.4.1", () => {
+  const root = site({
+    "site.json": { standardVersion: "1.13", paths: { blockManifest: "block-manifest.json", templates: "t", pages: "p", media: "m" } },
+    "block-manifest.json": { blocks: [] },
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["descriptor"] });
+  assert.equal(report.ok, false);
+  assert.match(messages(report), /describes ZERO blocks/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("descriptor: a collection describing its items by nothing warns, and does not block", () => {
+  const root = site({
+    "site.json": { standardVersion: "1.13", paths: { blockManifest: "b.json", templates: "t", pages: "p", media: "m" }, collections: [{ name: "faqs" }] },
+    "b.json": { blocks: [{ name: "Hero" }] },
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["descriptor"] });
+  assert.equal(report.ok, true, messages(report));
+  assert.match(messages(report), /describable by nothing/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("seo-outputs: a sitemap advertising a page that was never built warns", () => {
+  const root = site({
+    "dist/client/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+    "dist/client/sitemap.xml": `<urlset><url><loc>https://x.test/</loc></url><url><loc>https://x.test/ghost/</loc></url></urlset>`,
+    "dist/client/robots.txt": "User-agent: *\nAllow: /\nSitemap: https://x.test/sitemap.xml\n",
+    "dist/client/llms.txt": "# x",
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["seoOutputs"] });
+  assert.equal(report.ok, true, "advisory — must not block");
+  assert.match(messages(report), /crawler's to-do\s+list of 404s/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("structured-data: many Person entities on one page is NOT a duplicate", () => {
+  // A team page legitimately carries one Person per person. Flagging it
+  // reported a correct page as broken on the first run against a real site.
+  const root = site({
+    "dist/client/index.html": PAGE.replace("</head>", LD({ "@graph": [{ "@type": "Person", name: "A" }, { "@type": "Person", name: "B" }] }) + "</head>"),
+    "dist/client/404.html": PAGE,
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["structuredData"] });
+  assert.equal(report.findings.length, 0, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("structured-data: two Organization entities on one page warns", () => {
+  const root = site({
+    "dist/client/index.html": PAGE.replace("</head>", LD({ "@graph": [{ "@type": "Organization" }, { "@type": "Organization" }] }) + "</head>"),
+    "dist/client/404.html": PAGE,
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["structuredData"] });
+  assert.equal(report.ok, true, "advisory");
+  assert.match(messages(report), /duplicate JSON-LD entities \(Organization\)/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("secrets: a credential in editable content is reported", () => {
+  const root = site({
+    "content/globals.json": { contact: { email: "a@b.test" }, mailKey: "re_abcdefghij0123456789" },
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["secrets"] });
+  assert.match(messages(report), /Resend API key/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("secrets: third-party source is NOT reported", () => {
+  // `jose` ships PEM-parsing code containing the bare header. Matching it told
+  // a site to rotate a key that does not exist.
+  const root = site({
+    "dist/client/404.html": PAGE,
+    ".vercel/output/functions/x.func/node_modules/jose/import.js": "const H='-----BEGIN PRIVATE KEY-----';",
+    "dist/client/app.js": "// mentions -----BEGIN PRIVATE KEY----- in a comment",
+  });
+  const { report } = run({ root, only: ["secrets"] });
+  assert.equal(report.findings.length, 0, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("secrets: a real private key in the built output IS reported", () => {
+  const root = site({
+    "dist/client/404.html": PAGE,
+    "dist/client/leak.js": "-----BEGIN PRIVATE KEY-----\n" + "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ".repeat(4) + "\n-----END PRIVATE KEY-----",
+  });
+  const { report } = run({ root, only: ["secrets"] });
+  assert.match(messages(report), /a private key/);
+  rmSync(root, { recursive: true, force: true });
+});

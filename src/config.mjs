@@ -29,6 +29,9 @@ const DEFAULTS = {
     seoOutputs: true,
     structuredData: true,
     secrets: true,
+    seoConsumed: true,
+    tagManager: true,
+    internalLinks: true,
   },
   /**
    * Warning rules a site has cleaned and wants to keep clean. Once "dimensions"

@@ -95,6 +95,26 @@ Everything below **warns** rather than blocks. They were added to close the gap 
 
 Deliberately narrow: it matches key *shapes* with a recognisable provider prefix, not "anything that looks random", and it skips `node_modules`. The first version flagged a library's PEM-parsing source and told a site to rotate a key that does not exist — and a security check that cries wolf is one people stop reading, which is the worst outcome available.
 
+### `seoConsumed` — §8.1, §15
+
+| Warns | Why |
+|---|---|
+| **A declared `seo.title` or `seo.description` that appears in no built page's head** | The exact shape this package exists for: the editor offers the field, the author fills it in, the file changes, the build goes green, and the published page is unaffected. A route that reads three of five `seo` keys renders perfectly from the three it reads. |
+
+### `tagManager` — §7.2
+
+| Warns | Why |
+|---|---|
+| **A container id in globals that reaches no page** | An id sitting in globals with no snippet emitting it looks exactly like one that works. |
+| **The `<noscript>` half missing** | The half routinely forgotten, and the half that records a visitor who blocks scripts. |
+| **Pages loading the tag manager with no id declared** | The id is hardcoded somewhere an author cannot change it. |
+
+### `internalLinks` — §15
+
+| Warns | Why |
+|---|---|
+| **A link to a page that was never built** | "All nav links resolve" is a checklist line somebody does by hand per template; the build knows the answer. The usual cause is a slug rename that a redirect covered while the link pointing at it was left alone. A link to a declared redirect source is not counted — it costs a hop, not a 404. |
+
 ---
 
 ## What this package cannot check

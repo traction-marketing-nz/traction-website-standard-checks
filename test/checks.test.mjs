@@ -545,3 +545,72 @@ test("secrets: a real private key in the built output IS reported", () => {
   assert.match(messages(report), /a private key/);
   rmSync(root, { recursive: true, force: true });
 });
+
+test("seo-consumed: a declared seo.title that reaches no page is reported", () => {
+  const root = site({
+    "site.json": { paths: { pages: "content/pages" } },
+    "content/pages/home.json": { seo: { title: "The Declared Title", description: "d" } },
+    "dist/client/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["seoConsumed"] });
+  assert.equal(report.ok, true, "advisory");
+  assert.match(messages(report), /appears in NO built page/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("seo-consumed: a title that DOES reach the head is not reported", () => {
+  const root = site({
+    "site.json": { paths: { pages: "content/pages" } },
+    "content/pages/home.json": { seo: { title: "The Declared Title", description: "d" } },
+    "dist/client/index.html": PAGE.replace("<title>T</title>", "<title>The Declared Title</title>").replace('content="d"', 'content="d"'),
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["seoConsumed"] });
+  assert.equal(report.findings.filter((f) => /seo\.title/.test(f.message)).length, 0, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("internal-links: a link to a page that was never built is reported", () => {
+  const root = site({
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>", '<h1>H</h1><a href="/ghost/">gone</a>'),
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["internalLinks"] });
+  assert.equal(report.ok, true, "advisory");
+  assert.match(messages(report), /links to \/ghost\/, which is neither a built page nor a declared redirect/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("internal-links: a link to a declared REDIRECT source is not dead", () => {
+  const root = site({
+    "content/redirects.json": [{ from: "/old/", to: "/new/", status: 301 }],
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>", '<h1>H</h1><a href="/old/">moved</a>'),
+    "dist/client/new/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["internalLinks"] });
+  assert.equal(report.findings.length, 0, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("tag-manager: a declared container that reaches no page is reported", () => {
+  const root = site({
+    "content/globals.json": { analytics: { gtmContainerId: "GTM-ABC123" } },
+    "dist/client/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+  });
+  const { report } = run({ root, only: ["tagManager"] });
+  assert.match(messages(report), /appears on none of/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("tag-manager: no container declared and none used is silent", () => {
+  const root = site({ "content/globals.json": { nav: [] }, "dist/client/index.html": PAGE, "dist/client/404.html": PAGE });
+  const { report } = run({ root, only: ["tagManager"] });
+  // No tag-manager finding, and the reason it looked at nothing is SAID rather
+  // than silent — the suite's own floor then reports the empty run, correctly.
+  assert.equal(report.findings.filter((f) => f.check === "tag-manager").length, 0, messages(report));
+  assert.match(report.skips.map((s) => s.reason).join(), /no tag-manager container id declared/);
+  rmSync(root, { recursive: true, force: true });
+});

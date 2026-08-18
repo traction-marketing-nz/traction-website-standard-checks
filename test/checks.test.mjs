@@ -675,3 +675,32 @@ test("error-page: a CLASSIC static deployment needs no route table", () => {
   assert.match(report.skips.map((s) => s.reason).join(), /classic static deployment/);
   rmSync(root, { recursive: true, force: true });
 });
+
+test("promote: \"all\" turns every warning into a gate", () => {
+  const root = site({
+    "site-checks.config.json": { promote: "all" },
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>", '<h1>H</h1><img src="/a.png" alt="a">'),
+    "dist/client/404.html": PAGE,
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["builtHtml"] });
+  assert.equal(report.ok, false, "an unsized image must now block");
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("promote: a rule held back from the gate needs a reason, and is announced", () => {
+  const files = {
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>", '<h1>H</h1><img src="/a.png" alt="a">'),
+    "dist/client/404.html": PAGE,
+    ".vercel/output/config.json": routes(),
+  };
+  const held = site({ ...files, "site-checks.config.json": { promote: { all: true, except: { dimensions: "the gallery is being rebuilt" } } } });
+  const { report } = run({ root: held, only: ["builtHtml"] });
+  assert.equal(report.ok, true, "a held rule must not block");
+  assert.equal(report.warnings.length, 1);
+  rmSync(held, { recursive: true, force: true });
+
+  const noReason = site({ ...files, "site-checks.config.json": { promote: { all: true, except: { dimensions: "" } } } });
+  assert.throws(() => run({ root: noReason, only: ["builtHtml"] }), /needs a reason/);
+  rmSync(noReason, { recursive: true, force: true });
+});

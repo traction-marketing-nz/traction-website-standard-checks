@@ -17,10 +17,25 @@
 
 export class Report {
   constructor({ promote = [] } = {}) {
+    // Three shapes, because a site is rarely clean on everything at once and a
+    // gate that cannot be adopted incrementally is one that never gets adopted:
+    //
+    //   "promote": ["dimensions"]                      — these rules block
+    //   "promote": "all"                               — everything blocks
+    //   "promote": { "all": true, "except": { "hotlink": "why" } }
+    //
+    // The third is the one that matters. Turning the gate on usually means one
+    // or two rules a site cannot clear yet, and the choice is between leaving
+    // the whole gate off or writing down which rules are not on and why. Every
+    // exception carries a reason and is printed on every run, so a waiver stays
+    // a decision somebody made rather than the silence it was meant to avoid.
+    const object = promote && typeof promote === "object" && !Array.isArray(promote);
+    this.promoteAll = promote === "all" || (object && promote.all === true);
+    this.except = new Map(Object.entries(object ? promote.except ?? {} : {}));
     this.findings = [];
     this.skips = [];
     this.counts = {};
-    this.promote = new Set(promote);
+    this.promote = new Set(this.promoteAll || object ? [] : promote);
   }
 
   /** Something a visitor receives. Blocks. */
@@ -33,7 +48,9 @@ export class Report {
    * `rule` is the handle a site promotes by, e.g. "dimensions".
    */
   warn(check, message, { rule = null } = {}) {
-    const severity = rule && this.promote.has(rule) ? "error" : "warning";
+    const promoted = this.promoteAll || (rule && this.promote.has(rule));
+    const held = rule && this.except.has(rule);
+    const severity = promoted && !held ? "error" : "warning";
     this.findings.push({ check, message, rule, severity });
   }
 
@@ -69,6 +86,7 @@ export class Report {
   /** Human output. Returns the exit code the CLI should use. */
   print(log = console.log) {
     for (const { check, reason } of this.skips) log(`~ ${check}: SKIPPED — ${reason}`);
+    for (const [rule, reason] of this.except) log(`~ ${rule}: NOT GATED — ${reason}`);
 
     const group = (findings, mark) => {
       const byCheck = new Map();

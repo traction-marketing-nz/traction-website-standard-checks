@@ -51,7 +51,12 @@ export function checkSeoOutputs(config, report) {
         { rule: "robots" },
       );
     }
-    if (!/sitemap:/i.test(robots) && existsSync(join(dist, "sitemap.xml"))) {
+    // Only when the site is OPEN. A pre-launch robots.txt is a blanket
+    // Disallow, and pointing a crawler at a sitemap you are telling it not to
+    // read is worse than omitting it — this fired on a site whose robots.txt
+    // was exactly right for the stage it was at.
+    const blanketDisallow = /^\s*Disallow:\s*\/\s*$/im.test(robots) && !/^\s*Allow:/im.test(robots);
+    if (!blanketDisallow && !/sitemap:/i.test(robots) && existsSync(join(dist, "sitemap.xml"))) {
       report.warn(NAME, `robots.txt does not point at the sitemap.`, { rule: "seo" });
     }
   }

@@ -41,7 +41,7 @@ const DEFAULTS = {
    * is in here it blocks like any other error — the ratchet that stops debt
    * coming back without demanding every site fix everything on day one.
    */
-  promote: [],
+  promote: [],   // a list of rule names, or the string "all"
   allow: {
     /**
      * Sources that must NOT get a trailing-slash twin, each with a reason.
@@ -80,6 +80,18 @@ export function loadConfig(root) {
   };
 
   config.distDir ??= detectDist(root);
+
+  const promote = config.promote;
+  if (promote && typeof promote === "object" && !Array.isArray(promote)) {
+    for (const [rule, reason] of Object.entries(promote.except ?? {})) {
+      if (!reason || typeof reason !== "string") {
+        throw new Error(
+          `site-checks.config.json: promote.except["${rule}"] needs a reason. Holding a rule back from the ` +
+            `gate is a decision, and the reason is what a reviewer reads instead of re-deriving it.`,
+        );
+      }
+    }
+  }
 
   // An exception without a reason is an exception nobody can review later.
   for (const e of config.allow.redirectSlashExceptions) {

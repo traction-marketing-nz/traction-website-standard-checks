@@ -107,7 +107,12 @@ export function checkBuiltHtml(config, report) {
 
     for (const m of body.matchAll(/<img\b[^>]*>/gi)) {
       const tag = m[0];
-      if (!/\balt=/.test(tag) && !exempt("alt", file)) {
+      // `<img alt>` — a BARE attribute — parses as alt="" and is the correct,
+      // explicit way to mark an image decorative. Requiring `alt=` reported
+      // three correct hero images on a site that had done it properly, which
+      // is the worst kind of accessibility finding: it teaches people the
+      // check is wrong about the thing it is supposed to know best.
+      if (!/\balt(?=[\s=>/])/.test(tag) && !exempt("alt", file)) {
         report.fail(NAME, `${rel(file)}: an <img> has no alt attribute — ${tag.slice(0, 90)}`, { rule: "alt" });
       }
       // The rule is about LAYOUT SHIFT, so the check has to be about layout

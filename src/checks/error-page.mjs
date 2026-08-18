@@ -30,6 +30,20 @@ export function checkErrorPage(config, report) {
 
   const configPath = join(config.root, config.vercelConfig);
   if (!existsSync(configPath)) {
+    // Two deployment styles, and only one of them needs a route. A Build Output
+    // API v3 deployment must route to 404.html explicitly; a CLASSIC static
+    // deployment (a repo `vercel.json`, no `.vercel/output`) has the host serve
+    // 404.html by convention. Demanding the route table failed a site that was
+    // correct, in the way that platform serves it.
+    if (existsSync(join(config.root, "vercel.json"))) {
+      report.skip(
+        NAME,
+        `classic static deployment (vercel.json, no ${config.vercelConfig}) — the host serves 404.html by ` +
+          `convention, so there is no route table to check. Verified by requesting a path that cannot exist.`,
+      );
+      report.examined(NAME, 1);
+      return;
+    }
     report.fail(
       NAME,
       `A 404 page was built but ${config.vercelConfig} does not exist, so nothing could be shown to route to it. ` +

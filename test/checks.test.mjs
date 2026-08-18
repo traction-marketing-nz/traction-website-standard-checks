@@ -652,3 +652,26 @@ test("author-complete: a fully laboured manifest is silent", () => {
   assert.equal(report.findings.length, 0, messages(report));
   rmSync(root, { recursive: true, force: true });
 });
+
+test("built-html: a BARE alt attribute is valid — <img alt> means alt=''", () => {
+  // Requiring `alt=` reported three correct hero images on a site that had
+  // marked them decorative properly.
+  const root = site({
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>", '<h1>H</h1><img src="/a.webp" alt width="16" height="9">'),
+    "dist/client/404.html": PAGE,
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["builtHtml"] });
+  assert.equal(report.findings.length, 0, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("error-page: a CLASSIC static deployment needs no route table", () => {
+  // vercel.json + no .vercel/output = the host serves 404.html by convention.
+  // Demanding the route table failed a site that was correct for its platform.
+  const root = site({ "vercel.json": { cleanUrls: true }, "dist/404.html": PAGE, "dist/index.html": PAGE });
+  const { report } = run({ root, only: ["errorPage"] });
+  assert.equal(report.ok, true, messages(report));
+  assert.match(report.skips.map((s) => s.reason).join(), /classic static deployment/);
+  rmSync(root, { recursive: true, force: true });
+});

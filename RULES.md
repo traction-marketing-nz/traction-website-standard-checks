@@ -124,6 +124,14 @@ Deliberately narrow: it matches key *shapes* with a recognisable provider prefix
 | **A prop with no label**, including an array's ITEM descriptor | An author sees a humanised key instead of a name. "It inherits from the array" is a reasoning the generator can hold and no downstream reader can — one site shipped nine repeaters with raw-key row headers while passing its own label check (§4.4.1). |
 | **Far more built routes than content files** | A route with no content file is a page whose content or layout lives in framework code, which is what §4.4 refuses. Reported as a count, not a list: reconstructing each site's routing well enough to name a specific offender is a mapping that is right for one site and wrong for the next. |
 
+### `hiddenBlocks` — the editor's hide feature, proven on the artifact
+
+**An error, not advisory.** A rendered "hidden" block is something a visitor receives.
+
+| Refuses | Why |
+|---|---|
+| **A hidden block's content in the built output** | The editor writes two hide scopes — `hidden: true` on a template slot, `hiddenSlots` on a page — and neither touches content, which is exactly what makes a forgetful renderer invisible: flag saved, build green, "hidden" block rendered anyway. Checked by VALUE against each page's OWN template, because the first hand-proof of a renderer honouring these flags failed falsely when a human edited the wrong template file — a check that walks the declared reference cannot make that mistake. Needles that also appear in visible content are discarded (duplicated words prove nothing), and a site with no hides declared skips visibly. |
+
 ---
 
 ## What this package cannot check

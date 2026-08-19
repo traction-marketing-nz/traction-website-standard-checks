@@ -17,6 +17,7 @@ import { checkSeoOutputs, checkStructuredData } from "./checks/seo-outputs.mjs";
 import { checkSecrets } from "./checks/secrets.mjs";
 import { checkSeoConsumed, checkTagManager, checkInternalLinks } from "./checks/consumed.mjs";
 import { checkTemplates, checkAuthorComplete, checkRoutesAreContent } from "./checks/model.mjs";
+import { checkHiddenBlocks } from "./checks/hidden-blocks.mjs";
 
 const REGISTRY = {
   // The list first: rules that are not legal cannot be usefully checked against
@@ -38,6 +39,9 @@ const REGISTRY = {
   templates: checkTemplates,
   authorComplete: checkAuthorComplete,
   routesAreContent: checkRoutesAreContent,
+  // An ERROR, not advisory: a rendered "hidden" block is something a visitor
+  // receives. Skips (visibly) until a site's content declares a hide.
+  hiddenBlocks: checkHiddenBlocks,
 };
 
 export function run({ root = process.cwd(), only = null } = {}) {

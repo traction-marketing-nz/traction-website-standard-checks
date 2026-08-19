@@ -45,6 +45,7 @@ traction-site check --root ../other-site   # somewhere else
 | `templates` | does every page name a template that exists? |
 | `authorComplete` | does every manifest prop carry a label an author can read? |
 | `routesAreContent` | are there routes with no content file behind them? |
+| `hiddenBlocks` | a block the editor hid must be absent from the built page |
 
 The last ten are **advisory** — they warn and block nothing, so a site adopting them sees its whole gap at once. Promote each once it is clean.
 
@@ -99,4 +100,4 @@ A check that examines nothing must never print a tick. Individual checks say whe
 npm test
 ```
 
-Fifty-nine cases, each asserting **both** that a clean fixture passes and that the broken one fails *with a message naming the offender*. A test that only asserted failure would be satisfied by a check that fails on everything.
+Seventy cases, each asserting **both** that a clean fixture passes and that the broken one fails *with a message naming the offender*. A test that only asserted failure would be satisfied by a check that fails on everything.

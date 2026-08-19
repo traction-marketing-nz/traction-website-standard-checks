@@ -35,6 +35,7 @@ const DEFAULTS = {
     templates: true,
     authorComplete: true,
     routesAreContent: true,
+    hiddenBlocks: true,
   },
   /**
    * Warning rules a site has cleaned and wants to keep clean. Once "dimensions"

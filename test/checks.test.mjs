@@ -739,3 +739,89 @@ test("seo-outputs: a dead URL inside an index's child sitemap is still found", (
   assert.match(messages(report), /crawler's to-do\s+list of 404s/);
   rmSync(root, { recursive: true, force: true });
 });
+
+/* ── hidden blocks must be absent from the built output ─────────────────── */
+
+const HIDE_FIXTURE = (extra = {}) => ({
+  "site.json": { paths: { templates: "templates", pages: "content/pages" } },
+  "templates/home.json": { name: "home", slots: [{ name: "hero", block: "Hero" }, { name: "cta", block: "Cta" }] },
+  "content/pages/home.json": {
+    template: "home",
+    hiddenSlots: ["hero"],
+    content: {
+      hero: { headline: "The headline nobody should ever see on a page" },
+      cta: { label: "A call to action that stays visible on the page" },
+    },
+  },
+  "dist/client/404.html": PAGE,
+  ".vercel/output/config.json": routes(),
+  ...extra,
+});
+
+test("hidden-blocks: a hidden block's content in the built output FAILS", () => {
+  // The renderer forgot. The author was told the block is off; every visitor
+  // sees it. This is the check a hand-proof got wrong by editing the wrong
+  // template — the check reads the page's OWN template and cannot.
+  const root = site(HIDE_FIXTURE({
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>",
+      "<h1>The headline nobody should ever see on a page</h1><p>A call to action that stays visible on the page</p>"),
+  }));
+  const { report } = run({ root, only: ["hiddenBlocks"] });
+  assert.equal(report.ok, false);
+  assert.match(messages(report), /slot "hero" is HIDDEN, but its content/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("hidden-blocks: a renderer that honours the hide passes", () => {
+  const root = site(HIDE_FIXTURE({
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>",
+      "<h1>Something else</h1><p>A call to action that stays visible on the page</p>"),
+  }));
+  const { report } = run({ root, only: ["hiddenBlocks"] });
+  assert.equal(report.ok, true, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("hidden-blocks: template-level hidden is checked the same way", () => {
+  const root = site(HIDE_FIXTURE({
+    "templates/home.json": { name: "home", slots: [{ name: "hero", block: "Hero", hidden: true }, { name: "cta", block: "Cta" }] },
+    "content/pages/home.json": {
+      template: "home",
+      content: { hero: { headline: "The headline nobody should ever see on a page" }, cta: { label: "x" } },
+    },
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>", "<h1>The headline nobody should ever see on a page</h1>"),
+  }));
+  const { report } = run({ root, only: ["hiddenBlocks"] });
+  assert.equal(report.ok, false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("hidden-blocks: DUPLICATED content proves nothing and is not a false red", () => {
+  // A backup page carries the same words visibly. Finding them in the output
+  // says nothing about the hidden slot, so that needle must be discarded —
+  // and with no distinctive needle left, the pair is skipped, not failed.
+  const root = site(HIDE_FIXTURE({
+    "content/pages/backup.json": {
+      template: "home",
+      content: { hero: { headline: "The headline nobody should ever see on a page" } },
+    },
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>", "<h1>The headline nobody should ever see on a page</h1>"),
+  }));
+  const { report } = run({ root, only: ["hiddenBlocks"] });
+  // Filtered to this check: with every needle discarded the check SKIPS, and
+  // the suite's examined-nothing floor then fires for the single-check run —
+  // which is the floor working, not a hidden-blocks finding.
+  assert.equal(report.findings.filter((f) => f.check === "hidden-blocks").length, 0, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("hidden-blocks: no hides declared skips, and says so", () => {
+  const root = site(HIDE_FIXTURE({
+    "content/pages/home.json": { template: "home", content: { hero: { headline: "Visible and fine" } } },
+    "dist/client/index.html": PAGE,
+  }));
+  const { report } = run({ root, only: ["hiddenBlocks"] });
+  assert.equal(report.findings.filter((f) => f.check === "hidden-blocks").length, 0);
+  assert.match(report.skips.map((s) => s.reason).join(), /no hidden blocks declared/);
+  rmSync(root, { recursive: true, force: true });
+});

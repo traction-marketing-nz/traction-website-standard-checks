@@ -76,6 +76,24 @@ export function checkHiddenBlocks(config, report) {
       /* not this check's report */
     }
   }
+  // ROUTABLE COLLECTION items are pages too, and the first version never
+  // looked at them — so a hide on a case study or a project page was ungated
+  // while the same hide on an ordinary page was checked. Found reviewing a
+  // site whose case-study schema stripped the key entirely: the exact silent
+  // no-op this check exists for, invisible to it. A collection item's template
+  // may be its own or the collection's declared one.
+  for (const c of site.collections ?? []) {
+    if (!c?.path) continue;
+    for (const f of files(join(config.root, c.path), ".json")) {
+      try {
+        const json = readJson(f);
+        if (json && typeof json === "object" && !json.template && c.template) json.template = c.template;
+        pages.push({ file: f, json });
+      } catch {
+        /* not this check's report */
+      }
+    }
+  }
   if (pages.length === 0 || templates.size === 0) {
     report.skip(NAME, "no pages or templates to check");
     return;

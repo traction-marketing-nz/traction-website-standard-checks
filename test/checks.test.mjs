@@ -825,3 +825,23 @@ test("hidden-blocks: no hides declared skips, and says so", () => {
   assert.match(report.skips.map((s) => s.reason).join(), /no hidden blocks declared/);
   rmSync(root, { recursive: true, force: true });
 });
+
+test("hidden-blocks: a hidden slot on a routable COLLECTION item is checked too", () => {
+  // The first version scanned only paths.pages, so a hide on a case study was
+  // ungated while the same hide on an ordinary page was checked — found on a
+  // site whose collection schema stripped the key: the silent no-op this
+  // check exists for, invisible to it.
+  const root = site({
+    "site.json": { paths: { templates: "templates", pages: "content/pages" }, collections: [{ name: "work", path: "content/collections/work", template: "case" }] },
+    "templates/case.json": { name: "case", slots: [{ name: "body", block: "Body" }] },
+    "content/pages/.keep.json": {},
+    "content/collections/work/one.json": { hiddenSlots: ["body"], content: { body: { text: "A case study body that must never be visible here" } } },
+    "dist/client/index.html": PAGE.replace("<h1>H</h1>", "<h1>A case study body that must never be visible here</h1>"),
+    "dist/client/404.html": PAGE,
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["hiddenBlocks"] });
+  assert.equal(report.ok, false);
+  assert.match(messages(report), /slot "body" is HIDDEN/);
+  rmSync(root, { recursive: true, force: true });
+});

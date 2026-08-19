@@ -25,7 +25,17 @@ export function checkSeoOutputs(config, report) {
   const dist = join(config.root, config.distDir);
   let examined = 0;
 
-  for (const f of ["sitemap.xml", "robots.txt", "llms.txt"]) {
+  // A sitemap has two conventional names and both are correct: a hand-rolled
+  // route emits `sitemap.xml`, and @astrojs/sitemap emits `sitemap-index.xml`
+  // pointing at `sitemap-0.xml`. Knowing only the first reported a site as
+  // having no sitemap while its robots.txt correctly advertised the index.
+  const sitemapName = ["sitemap.xml", "sitemap-index.xml"].find((f) => existsSync(join(dist, f))) ?? null;
+  if (!sitemapName) {
+    report.warn(NAME, `No sitemap.xml or sitemap-index.xml in the built output (§8).`, { rule: "seo" });
+  } else {
+    examined += 1;
+  }
+  for (const f of ["robots.txt", "llms.txt"]) {
     if (!existsSync(join(dist, f))) {
       report.warn(NAME, `No ${f} in the built output (§8).`, { rule: "seo" });
     } else {
@@ -56,17 +66,26 @@ export function checkSeoOutputs(config, report) {
     // read is worse than omitting it — this fired on a site whose robots.txt
     // was exactly right for the stage it was at.
     const blanketDisallow = /^\s*Disallow:\s*\/\s*$/im.test(robots) && !/^\s*Allow:/im.test(robots);
-    if (!blanketDisallow && !/sitemap:/i.test(robots) && existsSync(join(dist, "sitemap.xml"))) {
+    if (!blanketDisallow && !/sitemap:/i.test(robots) && sitemapName) {
       report.warn(NAME, `robots.txt does not point at the sitemap.`, { rule: "seo" });
     }
   }
 
   // Every URL a sitemap advertises must be a page that exists — a sitemap of
   // 404s is worse than no sitemap, because it is a crawler's to-do list.
-  const sitemapPath = join(dist, "sitemap.xml");
-  if (existsSync(sitemapPath)) {
-    const xml = readFileSync(sitemapPath, "utf8");
-    const locs = [...xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/g)].map((m) => m[1]);
+  if (sitemapName) {
+    const sitemapPath = join(dist, sitemapName);
+    const readLocs = (file) =>
+      [...readFileSync(file, "utf8").matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/g)].map((m) => m[1]);
+    // An INDEX lists sitemaps, not pages. Treating its entries as page URLs
+    // would report every child sitemap as a missing page.
+    const isIndex = sitemapName === "sitemap-index.xml";
+    const locs = isIndex
+      ? readLocs(sitemapPath)
+          .map((u) => { try { return join(dist, new URL(u).pathname.replace(/^\//, "")); } catch { return null; } })
+          .filter((f) => f && existsSync(f))
+          .flatMap(readLocs)
+      : readLocs(sitemapPath);
     if (locs.length === 0) {
       report.warn(NAME, `sitemap.xml lists no URLs at all (§8).`, { rule: "seo" });
     }

@@ -704,3 +704,38 @@ test("promote: a rule held back from the gate needs a reason, and is announced",
   assert.throws(() => run({ root: noReason, only: ["builtHtml"] }), /needs a reason/);
   rmSync(noReason, { recursive: true, force: true });
 });
+
+test("seo-outputs: an @astrojs/sitemap index counts as a sitemap, and its children are read", () => {
+  // @astrojs/sitemap emits sitemap-index.xml pointing at sitemap-0.xml.
+  // Knowing only "sitemap.xml" reported a site as having no sitemap while its
+  // robots.txt correctly advertised the index — and treating the index's own
+  // entries as page URLs would then report every child sitemap as a 404.
+  const root = site({
+    "dist/client/index.html": PAGE,
+    "dist/client/real/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+    "dist/client/robots.txt": "User-agent: *\nAllow: /\nSitemap: https://x.test/sitemap-index.xml\n",
+    "dist/client/llms.txt": "# x",
+    "dist/client/sitemap-index.xml": "<sitemapindex><sitemap><loc>https://x.test/sitemap-0.xml</loc></sitemap></sitemapindex>",
+    "dist/client/sitemap-0.xml": "<urlset><url><loc>https://x.test/real/</loc></url></urlset>",
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["seoOutputs"] });
+  assert.equal(report.findings.length, 0, messages(report));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("seo-outputs: a dead URL inside an index's child sitemap is still found", () => {
+  const root = site({
+    "dist/client/index.html": PAGE,
+    "dist/client/404.html": PAGE,
+    "dist/client/robots.txt": "User-agent: *\nAllow: /\nSitemap: https://x.test/sitemap-index.xml\n",
+    "dist/client/llms.txt": "# x",
+    "dist/client/sitemap-index.xml": "<sitemapindex><sitemap><loc>https://x.test/sitemap-0.xml</loc></sitemap></sitemapindex>",
+    "dist/client/sitemap-0.xml": "<urlset><url><loc>https://x.test/ghost/</loc></url></urlset>",
+    ".vercel/output/config.json": routes(),
+  });
+  const { report } = run({ root, only: ["seoOutputs"] });
+  assert.match(messages(report), /crawler's to-do\s+list of 404s/);
+  rmSync(root, { recursive: true, force: true });
+});

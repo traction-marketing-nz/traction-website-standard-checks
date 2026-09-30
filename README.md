@@ -1,6 +1,11 @@
 # @traction/site-checks
 
-The [Website Architecture Standard](https://github.com/traction-marketing-nz/traction-web/blob/main/WEBSITE-ARCHITECTURE-STANDARD.md)'s gate items, as **checks that run**.
+The [Website Architecture Standard](./WEBSITE-ARCHITECTURE-STANDARD.md)'s gate items, as **checks that run**.
+
+This repo is the home of the shared, cross-site material:
+- [WEBSITE-ARCHITECTURE-STANDARD.md](./WEBSITE-ARCHITECTURE-STANDARD.md) — the full architecture standard.
+- [START-A-NEW-SITE.md](./START-A-NEW-SITE.md) — how to start a new site (clone an existing one, or brand new).
+- [RULES.md](./RULES.md) — what the automated gate enforces, and why.
 
 ## Why this exists
 

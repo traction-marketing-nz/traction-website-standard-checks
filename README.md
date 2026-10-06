@@ -5,6 +5,7 @@ The [Website Architecture Standard](./WEBSITE-ARCHITECTURE-STANDARD.md)'s gate i
 This repo is the home of the shared, cross-site material:
 - [WEBSITE-ARCHITECTURE-STANDARD.md](./WEBSITE-ARCHITECTURE-STANDARD.md) — the full architecture standard.
 - [START-A-NEW-SITE.md](./START-A-NEW-SITE.md) — how to start a new site (clone an existing one, or brand new).
+- [MEDIA-STRATEGY.md](./MEDIA-STRATEGY.md) — how media is stored, delivered, and edited (feeds the standard §3.4, §6).
 - [RULES.md](./RULES.md) — what the automated gate enforces, and why.
 
 ## Why this exists

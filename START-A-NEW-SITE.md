@@ -172,19 +172,23 @@ capture, DNS rollback); the greenfield gate (§14) governs sign-off instead.
 Both paths share this sequence. For Path B, run it alongside the design → handoff →
 gate process in §14. For Path A, the §13 fidelity gate governs sign-off.
 
-1. **Scaffold** the generator project; add the host adapter and an independent
+1. **Scaffold** the Astro project with the Vercel adapter and an independent
    database. **Install `@traction/site-checks` and wire it into `build` now** (§11.0).
 2. **Establish tokens** up front.
 3. **Build the core blocks** for the first template, then the rest.
 4. **Define templates**; map every page to one.
 5. **Author content** as `template + slot data`.
-6. **Wire dynamic features** — the enquiry pipeline (§7.1) and tag manager (§7.2).
-   Prove the enquiry loop with a real submission (§7.1.1).
-7. **Generate SEO/AEO/GEO outputs** (schema, sitemap, `llms.txt`) from the model.
-8. **Wire the error page and redirects** (§3.7); confirm `redirects.json` is read by
-   the build.
-9. **Write `site.json`** (§4.6) — the descriptor naming every path and collection.
-10. **Prove the data-driven render tree-shakes** and the editor↔git↔preview loop on
+6. **Wire dynamic features** — the enquiry pipeline (§7.1 or §7.1.2) with
+   `security.allowedDomains`, and the tag manager (§7.2). Prove the enquiry loop
+   with a real submission (§7.1.1).
+7. **Set up video** if the site has any — Git LFS, the Mux environment, the GitHub
+   secrets, the sync Action and the `check-videos` build gate
+   ([MEDIA-STRATEGY.md](./MEDIA-STRATEGY.md) §4).
+8. **Generate SEO/AEO/GEO outputs** (schema, sitemap, `llms.txt`) from the model.
+9. **Wire the error page and redirects** (§3.7, §3.7.3); confirm `redirects.json` is
+   read by the build.
+10. **Write `site.json`** (§4.6) — the descriptor naming every path and collection.
+11. **Prove the data-driven render tree-shakes** and the editor↔git↔preview loop on
     one page before scaling; then pass the editor-readiness gate (§4.4).
 
 ---

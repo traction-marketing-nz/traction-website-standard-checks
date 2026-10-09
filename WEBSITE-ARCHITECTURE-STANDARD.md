@@ -1,27 +1,50 @@
 # Website Architecture Standard
 
-**A reusable reference architecture for building fast, AI-editable, AEO/GEO/SEO-native websites.**
+**Version 2.0** · 2026-10-09 · [Changelog](#16-changelog)
 
-This is the standard for *all* our websites. Any new site project — whether built by a person or an AI agent — follows this document to know how to structure and build. It is intentionally generic: it defines the principles, the content model, the stack, the editor integration, the infrastructure, and the conventions, with sensible defaults that are portable by design.
+The rules every Traction website follows. Build to them, and prove them with
+[`@traction/site-checks`](./README.md).
 
-> **For an AI agent reading this:** build to the **contracts** in §4 and the **principles** in §1. A site is "done right" **only when all of**: (a) it satisfies the principles (§1); (b) it conforms to the content model (§3) — **every route is a `template` + slot content-data file; no page's content or layout lives in framework code**; (c) it produces the §4 contracts — a **generated `block-manifest.json`, `templates/`, and a root `site.json` descriptor (§4.6)**; (d) it emits the SEO/AEO/GEO outputs (§8); and (e) it **passes the editor-readiness gate (§4.4)**. A pixel-perfect site whose pages are hand-coded is **not done** — it fails (b), (c) and (e). Defaults (Astro, Vercel, Supabase) are recommendations; the architecture must remain portable per §1.2.
->
-> **And note what a build cannot tell you.** Several requirements here — the enquiry pipeline (§7.1), the no-secrets-in-globals boundary (§3.8.1), the manifest's array descriptors (§4.2.2) — pass every compile, lint and typecheck while being completely broken. Where this document specifies a *check that runs*, run it; do not substitute a green build or your own reading of the code.
+- **Do not copy this document into a site repo.** Link to it.
+- **Record the version a site is built to** in `site.json` → `standardVersion` (§4.6).
+- **Automated rules live in [RULES.md](./RULES.md).** This document does not restate them.
+- **Media storage, delivery and video playback live in [MEDIA-STRATEGY.md](./MEDIA-STRATEGY.md).**
 
-**Standard version 1.15** · last updated 2026-08-19. Each site records which version it was built to (e.g. in its repo README, and in `site.json` per §4.6) so conformance is checkable as the standard evolves. See the [changelog](#17-changelog).
+## Definition of done
+
+A site is done only when **all** of these hold:
+
+1. It follows the principles (§1).
+2. Every route is a `template` + slot content-data file (§3). No page content or layout lives in framework code.
+3. It produces a generated `block-manifest.json`, a `templates/` directory and a root `site.json` (§4).
+4. It emits the SEO / AEO / GEO outputs (§8).
+5. It passes the editor-readiness gate (§4.4).
+6. `traction-site check` runs in the `build` script and exits 0 (§11.0).
+
+A pixel-perfect site with hand-coded pages is **not done**.
+
+A green build does not prove these. Prove each one with the check its section names:
+
+- the enquiry pipeline (§7.1.1)
+- secrets kept out of globals and bundles (§3.8.1)
+- usable array descriptors in the manifest (§4.2.2)
+- redirects and the 404 on a real deployment (§3.7.2, §3.7.3)
+- video playback on a real iPhone (MEDIA-STRATEGY §4.7)
+
+The defaults (Astro, Vercel, Supabase, Mux) are recommendations. The site must stay portable (§1.6).
 
 ---
 
-## 1. Core principles (non-negotiable)
+## 1. Core principles
 
-1. **Content is data, not markup.** Pages are structured data (typed blocks), never hand-authored HTML. This is what makes AI editing safe, validation possible, and design consistent.
-2. **The repo is the site; the editor is removable (the Decoupling Rule).** The site must build and run with zero dependency on any editing tool. The editor depends on the site's open contracts — never the reverse. Any host, DB, or editor can be swapped.
-3. **Tight & small.** Every page ships the *minimum* HTML + CSS + JS for its design. Default to zero client JS; opt into interactivity only where needed.
-4. **AEO / GEO / SEO are native, not bolted on.** Structured data, semantic HTML, and machine-readability are produced automatically from the content model.
-5. **Exact fidelity through tokens + components.** Design lives in versioned code (design tokens + components). Content carries no raw style. A design change happens in one place and propagates everywhere.
-6. **Portable.** Hosting, database, media, and editor are independent, swappable services. Committing to a vendor today must not lock the site to it.
+1. **Content is data, not markup.** Pages are typed blocks, never hand-authored HTML.
+2. **The repo is the site; the editor is removable.** The site builds and runs with no editing tool. The editor depends on the site's open contracts, never the reverse.
+3. **Tight and small.** Each page ships the minimum HTML, CSS and JS for its design. Default to zero client JS.
+4. **AEO / GEO / SEO are native.** Structured data, semantic HTML and machine-readable outputs come from the content model.
+5. **Exact fidelity through tokens and components.** Design lives in design tokens and components. Content carries no raw style.
+6. **Portable.** Host, database, media services and editor are independent and swappable.
 
-If a proposed change violates one of these, it is the wrong change.
+A change that breaks one of these is the wrong change.
 
 ---
 
@@ -29,47 +52,47 @@ If a proposed change violates one of these, it is the wrong change.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  EDITOR (e.g. Pulse) — AI-first editing UI                         │
-│  composes templates · edits content · live preview · approve       │
+│  EDITOR (Pulse) — composes templates · edits content · preview     │
 └───────────────┬──────────────────────────────────────────────────┘
                 │ writes open files (one-way dependency)
                 ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  GIT REPO = THE SITE (source of truth)                             │
-│  /blocks (code) · /templates (data) · /content (data) · /renderer  │
-└───────────────┬──────────────────────────────────────────────────┘
-                │ on push → build
+│  /blocks · /templates · /content · /videos (Git LFS) · site.json   │
+└───────┬───────────────────────────────────────────┬──────────────┘
+        │ on push → build                            │ on push to videos/
+        ▼                                            ▼
+┌──────────────────────────────┐   ┌──────────────────────────────┐
+│ BUILD — static HTML, JSON-LD,│   │ GITHUB ACTION — uploads video │
+│ sitemap, llms.txt, checks    │   │ masters to Mux, commits the   │
+└───────────────┬──────────────┘   │ video manifest + posters      │
+                │ deploy           └──────────────────────────────┘
                 ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  BUILD — static-site generator + framework components               │
-│  data-driven render → static HTML · JSON-LD · sitemap · llms.txt    │
-└───────────────┬──────────────────────────────────────────────────┘
-                │ deploy
-                ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  HOST (edge CDN) + serverless functions  ·  DB + storage (indep.)  │
+│  HOST (Vercel edge CDN) + serverless functions                     │
+│  DB + storage (independent) · video streaming (Mux, HLS)           │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**One line:** the editor edits typed content → committed to git → the build renders static HTML → served from an edge CDN, with small serverless functions + an independent database for the few dynamic features.
+The editor edits typed content. Git stores it. The build renders static HTML. The host serves it from the edge. Serverless functions and an independent database handle the few dynamic features. Mux streams video.
 
 ---
 
-## 3. The content model — the linchpin
+## 3. The content model
 
-Pages do not freely compose layout. The model is **three tiers**:
+Three tiers:
 
 ```
-Blocks (materials, code)  →  Templates (page designs, data)  →  Pages (instances, data)
+Blocks (code)  →  Templates (data)  →  Pages (data)
 ```
 
 | Tier | What it is | Owned by |
 |---|---|---|
-| **Blocks** | Reusable section components (`Hero`, `FeatureGrid`, `FAQ`, `CTA`, …) | Developers (code) |
-| **Templates** | A *fixed* arrangement of blocks with **named content slots** | Composed in the editor, saved as data |
-| **Pages** | A template choice + the content that fills its slots | Editors + AI |
+| **Blocks** | Reusable section components (`Hero`, `FAQ`, `CTA`, …) | Developers |
+| **Templates** | A fixed arrangement of blocks with named slots | Composed in the editor, saved as data |
+| **Pages** | A template choice + the content for its slots | Editors and AI |
 
-A page declares **which template** it uses and **fills that template's slots** — it cannot invent layout:
+A page names its template and fills that template's slots. It cannot invent layout.
 
 ```jsonc
 // content/pages/<slug>.json
@@ -88,72 +111,56 @@ A page declares **which template** it uses and **fills that template's slots** �
 
 ### 3.1 Prop type system
 
-Every block prop is one of two kinds.
-
-**Content props** (the data — freely editable):
+**Content props** (freely editable):
 
 | Type | Meaning |
 |---|---|
 | `string` | Plain text |
 | `richline` | One line, inline marks only (bold, italic, link) |
-| `richtext` | Multi-paragraph prose, stored as **Markdown** (§3.1.1) — paragraphs, lists, links, bold/italic. **No images** (images travel through `image` props and the media pipeline, never inside prose) |
+| `richtext` | Multi-paragraph prose stored as Markdown (§3.1.1). No images |
 | `number` / `boolean` / `url` | Scalars |
-| `image` | `{ src, alt, width, height }` — `src` is a **repo path** under the site's media directory (media is committed content, not an external store), `alt` is required, and `width`/`height` are the file's real intrinsic dimensions, recorded when the image is chosen, never typed. The block renders through the host's image optimization (§3.4); a hotlinked external `src` is a conformance failure |
+| `image` | `{ src, alt, width, height }`. `src` is a repo path under `paths.media`. `alt` is required. `width`/`height` are the file's real intrinsic dimensions, read from the file, never typed. Rendered through the host's image optimization (§3.4). A hotlinked external `src` fails conformance |
+| `video` | A string `videos/<name>.mp4` — a master committed to `paths.videos`. The block resolves it to a Mux playback ID and poster through the video manifest (§3.4.2). A `/media/*.mp4` path is legacy and is not allowed on a new site |
 | `media` | `{ kind: image \| video \| lottie \| none, … }` |
 | `cta` | `{ label, action, href?, target? }` |
 | `array<T>` | Ordered, repeatable list |
 | `object{…}` | Fixed-shape group |
-| `ref<collection>` | Pointer to a content collection item (e.g. `team-member`, `faq-category`) |
+| `ref<collection>` | Pointer to a collection item |
 
-**Variant props** (presentational — constrained): **`enum` only**, each `{ options, default }`. The editor picks from a menu; it cannot type a raw value. There is deliberately **no "raw style" prop type**.
+**Variant props** (presentational) are `enum` only, each `{ options, default }`. There is no raw-style prop type.
 
-#### Closed sets that are lists (added in 1.10)
+**A list drawn from a closed set** is an `array` whose item descriptor carries `options`:
 
-`enum` covers one value from a set. A **list** drawn from a set — "which surfaces does this record appear on", "which categories apply" — is an `array` whose **item descriptor carries `options`**. Same idea, one level down; an editor renders it as a set of choices rather than a free-text repeater.
+- `options` on a list is advisory. A value outside the list stays valid, is kept on save, and renders nowhere until the thing it names exists.
+- The editor shows an unlisted value as present but inert. It never drops it and never shows it as working.
+- If a value must be refused, the field is an `enum`.
+- The generator fills `options` from the site (for example from `paths.templates`). Never hand-type the list.
 
-**`options` on a list is advisory, not a constraint.** A value outside the list stays valid, is preserved on save, and simply renders nowhere until whatever it names exists. This is deliberate, and the reason is a real one: a site staged four download cards against surfaces (`fees`, `nutrition`, `centre`) for pages that were designed but not yet built. A closed `enum` would have failed the build on content whose only fault was being ready early — so the author would have deleted the notes and tried to remember them later, which is exactly the "editable nowhere" failure this standard exists to prevent, wearing a different hat.
+**Declare only what you render.** If a block interpolates a prop as plain text, the prop is a `string`, not `richline` or `richtext`. The §4.4 gate checks this.
 
-The trade is stated rather than hidden: a typo is accepted where an `enum` would refuse it. The editor must therefore **show an unlisted value as present-but-inert** — never silently drop it, and never quietly accept it as though it worked. If a site genuinely needs the value refused, that field is an `enum` and its content must be correct before it ships.
+#### 3.1.1 `richtext` — one Markdown grammar, one renderer
 
-**Fill the list from the site, not by hand.** A hardcoded vocabulary rots the day someone adds a template. The generator resolves it — e.g. from the directory `site.json` already names in `paths.templates` — so the manifest and the site cannot disagree.
+`richtext` is Markdown, rendered by a module the site owns (conventionally `src/lib/markdown.ts`). Treat the content as untrusted.
 
-**Declare only what you render.** A prop typed `richline` or `richtext` whose block interpolates it as plain text (`{value}`) is a contract lie: the editor offers formatting, the author uses it, and the site publishes literal asterisks. One site shipped 13 `richline` headings rendered as plain text. If the block doesn't render marks, the prop is a `string` — and the §4.4 gate checks the claim, because the manifest and the component are two files that drift.
+- **The grammar is an allowlist.** Build it from a zero preset and enable only: paragraphs, `-` and ordered lists, `**bold**`, `*italic*`, `[text](href)`, backslash escapes, entities, hard breaks.
+- **Everything else is off.** Raw HTML renders as escaped literal text. Headings, code, blockquotes, tables, images and autolinks are off.
+- **No images in prose.** `![](…)` emits no `<img>`. Images are `image` props.
+- **Link schemes are an allowlist:** `https:`, `http:`, `mailto:`, `tel:`, site-relative `/…`, in-page `#…`. Reject protocol-relative `//host`. A rejected href renders as inert text.
+- **The renderer never rewrites text.** `typographer` and `linkify` are off. Content round-trips byte-identical.
+- **The editor previews through the same grammar.** The site and the editor share a committed fixture corpus of input → expected-HTML cases. Both test suites run it.
+- **Pin the behaviour with a `test-markdown` script:** raw HTML escapes, image syntax emits no `<img>`, bad schemes render inert, allowed constructs render.
 
-#### 3.1.1 `richtext` — Markdown, one grammar, one renderer
-
-`richtext` is stored as **Markdown** and rendered by a module the site owns (conventionally `src/lib/markdown.ts`). The rules exist because the content is authored in an editor, hand-edited, and AI-written — treat it as **untrusted**, and because an editor preview and a site renderer that disagree make the preview lie.
-
-- **The grammar is a fixed allowlist**, not "Markdown": paragraphs (blank-line separated), `-` bullet and ordered lists, `**bold**`, `*italic*`, `[text](href)`, backslash escapes, entities, hard breaks. **Everything else is off** — raw HTML (parsed as literal text and emitted escaped, never sanitised downstream), headings, code, blockquotes, tables, images, autolinks. Build it from a zero preset *enabling* the list above; a denylist silently regains constructs as the parser library grows.
-- **No images in prose.** `![](…)` must not emit an `<img>` — a prose image bypasses the entire image pipeline (no dimensions, no srcset, no enforced alt). Images are `image` props.
-- **Link schemes are an allowlist**: `https:`/`http:`/`mailto:`/`tel:`, site-relative `/…`, in-page `#…`. Protocol-relative `//host` is rejected explicitly — it is off-site wearing a local-looking href. A rejected href renders as inert text, not a link.
-- **The renderer never rewrites the author's text**: `typographer` and `linkify` off. What round-trips through the editor must come back byte-identical.
-- **The editor previews through the same grammar.** If the two deviate, the preview lies about what will publish. "Change them together" is a sentence that is read, not a check that runs — so the site and the editor must **share a committed fixture corpus**: a file of input→expected-HTML cases that the site's `test-markdown` and the editor's preview tests both execute. Without it nothing catches drift, and both sides stay green while disagreeing.
-- **Pin the behaviour with a check that runs** (a `test-markdown` script): raw HTML escapes, image syntax emits no `<img>`, bad schemes render inert, and the constructs the grammar grants render. CommonMark has sharp edges the author will hit (`**20%**off` refuses to close and publishes literal asterisks) — the honest response is a preview that shows exactly that, which the textarea-plus-preview editing model provides and a WYSIWYG cannot.
-
-### 3.2 Separating content, layout & style
-
-The rule that makes AI/non-technical editing safe — three layers, three owners:
+### 3.2 Content, layout and style are separate
 
 | Layer | What it is | Lives in | Who edits |
 |---|---|---|---|
-| **Content** | Words, images, links — *information only* | Block JSON `props` | Editors + AI |
-| **Layout** | How content is arranged (columns, responsive behaviour) | The component + template | Developers |
-| **Style** | Colours, type scale, spacing, radii | Design tokens (CSS vars) + component CSS | Developers (once) |
+| **Content** | Words, images, links | Block JSON props | Editors and AI |
+| **Layout** | Arrangement and responsive behaviour | Component + template | Developers |
+| **Style** | Colours, type scale, spacing, radii | Design tokens + component CSS | Developers |
 
-**Content carries data only — never a hex code, font size, or pixel value.**
-
-```jsonc
-// CONTENT — just the words
-{ "type": "RichText", "props": { "body": "…" } }
-```
-```css
-/* STYLE — defined once in the component, applied everywhere */
-.richtext p { font-size: var(--text-body); color: var(--color-body); max-width: var(--maxw-prose); }
-```
-
-When an editor needs a presentational choice, it's a **constrained variant** (`theme: light | dark`, `columns: 2 | 3`), mapped to tokens by the component. The schema rejects anything outside the options.
-
-**Design tokens** are a single file of CSS custom properties — the only place visual design is defined:
+- Content never carries a hex code, font size or pixel value.
+- A presentational choice is a constrained variant (`theme: light | dark`, `columns: 2 | 3`) that the component maps to tokens.
+- Design tokens are one file of CSS custom properties, the only place visual design is defined:
 
 ```css
 :root {
@@ -166,10 +173,10 @@ When an editor needs a presentational choice, it's a **constrained variant** (`t
 
 ### 3.3 Templates
 
-A small, fixed set of page designs (typically ~6–12). Each = ordered **slots** (`block`, `required`/`optional`/`repeatable`) + the structured data it emits.
+A small fixed set of page designs (typically 6–12). Each is an ordered list of slots (`block`, `optional`, `repeatable`) plus the structured data it emits.
 
 ```jsonc
-// templates/service-page.json — composed in the editor, saved as data
+// templates/service-page.json
 {
   "name": "service-page",
   "schema": ["Service", "FAQPage"],
@@ -183,315 +190,307 @@ A small, fixed set of page designs (typically ~6–12). Each = ordered **slots**
 }
 ```
 
-### 3.4 Compile-time → "tight and small"
+The `slots` order is the only control over render order (§13.2).
 
-Because every page conforms to a *known* template, the build knows exactly what each page needs and ships nothing more:
+### 3.4 Tight and small — what each page ships
 
 - **Per-template CSS** — only the styles for that template's blocks.
-- **Per-template JS** — only the interactive islands that template declares (most ship ~0 JS).
-- **No dead components** — a page can't reference a block its template doesn't declare → total tree-shaking.
-- **Media optimised at build** — responsive `srcset`, modern formats, lazy-loaded below the fold.
+- **Per-template JS** — only the islands the template declares. Most pages ship close to zero JS.
+- **No dead components** — a page cannot reference a block its template does not declare.
+- **Images** go through the host's image optimization: responsive `srcset`, modern formats, explicit `width`/`height`, and `loading="lazy"` below the fold (MEDIA-STRATEGY §3).
 
-Result: each page is the minimum HTML + CSS + (rarely) JS for its design.
+Performance rules for every block:
 
-#### 3.4.1 Media lives in the repo — which means the repo has a weight budget
+1. **The LCP image is never lazy.** Give the visible hero image (or video poster) `fetchpriority="high"`.
+2. **Hidden carousel slides get `fetchpriority="low"`.** Only the visible slide competes with the LCP.
+3. **Carousels mount media on demand.** The server HTML carries the first slide's media only. The next slide arms 5 s before the auto-advance. Manual navigation arms its target at once, with the poster covering the gap. An armed slide stays mounted.
+4. **Heavy embeds sit behind a facade.** A YouTube or similar player renders as its thumbnail plus a play button. The click swaps in the real iframe with autoplay.
+5. **Hydrate only stateful blocks.** A block that needs a small behaviour (a gallery, a form handler, a facade) stays static and attaches it with an inline `<script>`. Use `client:load` only where the block holds state across interactions (a carousel, a filterable grid).
+6. **Heavy third-party scripts load after `load`.** Video players, chat and booking widgets start after the window `load` event, in idle time.
+7. **Images are WebP or AVIF at display size.** A PNG photo or a source image larger than its largest rendered size is a defect.
 
-Media is committed content (§3.1): an image and the page referencing it arrive in the same commit, review together, deploy together and revert together. That is the right trade for photographs, and it has a cost the earlier drafts never stated — **git keeps every version of every binary forever.** A 5 MB hero replaced monthly is 60 MB a year that no `git gc` will reclaim, and the pain arrives late, as slow clones and rejected pushes, long after the decision that caused it.
+#### 3.4.1 Media in the repo has a weight budget
 
-So the budget is part of the contract, declared in `site.json`'s `media` block (§4.6):
+Images are committed content. The budget is declared in `site.json` → `media` (§4.6):
 
-- **Cap the single file** (`maxSourceBytes`, 1 MB is a sound default) and **the source width** (`maxSourceWidth`, ~2400px). Anything larger is a source file that should have been resized before it was content. An editor should offer to downscale rather than simply refuse — an author with a camera original and no image editor is otherwise stuck.
-- **The host's image optimization does the rest** (§3.4): one committed source at a sensible size, many rendered sizes at request time. Committing multiple pre-sized copies of the same picture is the anti-pattern this replaces.
-- **Video does not belong in the repo.** It defeats every cap above by an order of magnitude, and it is the one asset type a static host serves worse than a video service does. Reference it from a video host, or keep it out of git via the host's own asset pipeline. *(This is the concrete lesson: a 102 MB video committed to a site repo had its push rejected by the git host outright — twice.)*
-- **Deleting a file does not reclaim its space.** Treat the caps as prevention, not something to clean up later; a repo that has already taken on weight needs history rewriting, which is a far worse day than declining the upload was.
+- **Cap the single file** (`maxSourceBytes`, default 1 MB) and the **source width** (`maxSourceWidth`, default 2400 px). An editor offers to downscale an oversized upload. It does not only refuse.
+- **Commit one source per picture.** The host's image optimization makes the sizes. Never commit pre-sized copies.
+- **Video masters never go in normal git or `public/`.** They go in `videos/` under Git LFS (§3.4.2).
+- **Deleting a file reclaims nothing.** Enforce the caps at upload.
+- **Do not rewrite git history** to reclaim space.
 
-### 3.5 Navigation & menus — derived, not hand-authored
+#### 3.4.2 Video
 
-Navigation follows the same **content-is-data** rule as pages: a menu is **derived deterministically** from structured data, never a hand-maintained list of links and never hand-written markup. This is what lets the menu stay correct as pages come and go, and lets the editor manage it through the normal typed-content contract.
+Video works like images: the master is in the repo, content refers to it by path, and a pipeline publishes it. MEDIA-STRATEGY §4 holds the full rules. The contract:
 
-**Two-part model — skeleton × membership:**
+- **Masters** live in `videos/` (declared as `paths.videos`) and are tracked by Git LFS.
+- **Content** refers to a master as `"videos/<name>.mp4"`.
+- **A GitHub Action** uploads new or changed masters to Mux. It commits the playback IDs to the video manifest (`paths.videoManifest`) and a first-frame poster to `public/media/video-posters/`.
+- **The build gate** (`check-videos`) runs in `build`. It fails when content uses a master that is not on Mux in its current version, or whose poster is missing.
+- **The page** paints the poster first and attaches the stream after `load` (MEDIA-STRATEGY §4.6).
+- **The host never fetches LFS content.** Vercel's Git LFS setting stays off.
 
-1. **Menu skeleton (globals).** The curated structure — the ordered groups, their labels, any **second-level sub-groups** (column headings for a mega-menu), any group that is a *direct link*, and any **static/external links** for content outside the build (e.g. a blog) — lives in the site **globals** (`content/globals.json` → `nav`). It is small, stable, and editor-curated. It defines *shape*, not *contents*.
-2. **Membership (per-page, opt-in).** A page joins a menu **only** by declaring a typed `nav` entry in its own page data, naming its top-level `group` and (for a mega-menu) its second-level `subgroup`. No declaration ⇒ the page is in no menu. A page is **never auto-linked just by existing** — opt-in is the safe default, so legal pages, profile pages, and campaign landers stay off-menu by doing nothing.
+### 3.5 Navigation and menus — derived, not hand-authored
+
+> **Status:** not implemented on any site. Header links are a globals list today. Implement `buildNav` on the next site that needs a menu change, to this section.
+
+A menu is derived from data:
+
+1. **Menu skeleton (globals).** `content/globals.json` → `nav` holds the ordered groups, their labels, any second-level sub-groups (mega-menu columns), any group that is a direct link, and any static or external links. It defines shape, not contents.
+2. **Membership (per page, opt-in).** A page joins a menu only by declaring a `nav` entry naming its `group` and, for a mega-menu, its `subgroup`. No entry means no menu.
 
 ```jsonc
-// content/pages/<slug>.json — the page opts itself into a menu
+// content/pages/<slug>.json
 {
   "template": "service-page",
   "slug": "seo",
-  "status": "published",                       // or "draft" (see switches below)
+  "status": "published",
   "nav": { "group": "disciplines", "subgroup": "seo", "label": "SEO", "order": 10 },
   "seo": { … }, "content": { … }
 }
 ```
 
-**Two levels (flat dropdowns and mega-menus).** A group is flat by default — its leaves render as one list. A group that declares ordered **sub-groups** becomes a mega-menu: leaves are placed into the sub-group their page names, under that sub-group's heading, in skeleton order. A leaf with no `subgroup` (in a group that has them) renders in an unheaded leading column. Sub-groups follow the same rules as groups: a sub-group with no leaves is omitted, and the sort within it is the uniform `order`-then-label rule.
+Rules:
 
-**Content outside the build.** Some menu entries point at pages this build doesn't own (an external blog, a third-party app). These are declared as **static links in the skeleton**, not derived from pages — they have a fixed `href`, open external where appropriate, and are merged ahead of any page-derived leaves. This keeps the menu faithful to the source even when whole sections live elsewhere.
+- **Two levels.** A group is flat by default. A group with sub-groups is a mega-menu. A leaf with no `subgroup` in such a group renders in an unheaded leading column.
+- **Static links** for content outside the build are declared in the skeleton and render ahead of page-derived leaves.
+- **Href** comes from the page's `slug`. A `nav.href` overrides it.
+- **Sort:** groups in skeleton order. Within a group, by numeric `order` (use sparse values: 10, 20, 30), then by `label`.
+- **Empty groups and sub-groups are omitted.**
+- **The sort is a pure function** of globals + pages, so the preview matches the build.
 
-**Href.** A leaf's link is derived from the page's `slug` by default. A `nav` entry may carry an explicit `href` to override it — for a page whose route differs from its slug (e.g. a nested route with a flat slug) or one that should link to a specific anchor.
+| Switch | Field | Off-state |
+|---|---|---|
+| **Opt-in** | `nav` present? | Not in any menu; still a reachable page |
+| **Draft** | `status: "draft"` | Excluded from the production build and from every menu |
 
-**Uniform sort order (the rule that makes every menu consistent):**
-- **Groups** render in the order the skeleton defines them.
-- **Within a group**, members sort by an explicit numeric **`order`** (sparse values — 10, 20, 30 — so items can be inserted without renumbering), then by `label` as a stable tiebreak.
-- **Empty groups** (no members and no direct `href`) are omitted automatically.
-- The sort is a **pure function of the data** — same globals + pages ⇒ identical menu — so the editor's live preview matches the build byte-for-byte (§4.3).
+Editor requirements:
 
-**Two orthogonal visibility switches:**
-
-| Switch | Field | Controls | Off-state behaviour |
-|---|---|---|---|
-| **Opt-in** | `nav` present? | Menu membership | No `nav` ⇒ not in any menu (still a normal, reachable page) |
-| **Draft** | `status: "draft"` | Publication | Excluded from the build (route 404s in production, viewable in dev) **and** never in any menu, even with a `nav` block |
-
-The switches are independent: *published-but-unlinked* and *draft-and-hidden* are both first-class states. A work-in-progress or parked page therefore never leaks into the menu — membership is added only once a page is finished.
-
-**What this shape asks of an editor** — requirements on *any* editor, not a description of one:
-- `nav` is a **typed field** the editor edits through the same validated-schema path as any content (§3.1, §11) — *never* by editing markup. `group` and `subgroup` are enums sourced from the skeleton, so an author cannot file a page under a group that does not exist.
-- The **skeleton** is editable globals: reordering, renaming or adding a top-level group is a globals edit through a constrained UI, not a code change.
-- The editor's mental model is **"this page belongs in this menu,"** set on the page itself. There is no separate, hand-synced link list to fall out of date; the menu self-assembles from the pages.
-- Because the menu is a **pure builder** over (globals + pages), the preview build renders the live menu exactly — including a just-toggled `draft` or a reordered group.
-
-> ⚠️ **Unimplemented as of 1.8.** This section is the most specified in the document and the least built. On both live sites the header is a hand-typed leaf list in globals; one site has sixteen pages declaring `nav` entries that **nothing reads** — editing them changes nothing — and one has a footer link list hardcoded in a layout that has already drifted from globals. No site has a `buildNav`. Treat §3.5 as a design to implement, not a description of what exists, and do not cite it as precedent until a site actually derives its menu.
-
-**Build / render & SEO:**
-- A pure `buildNav(globals, pages)` returns the ordered tree; the header/footer components render it. It lives in the **renderer package** (§4.2) so build and editor agree.
-- Navigation contributes `SiteNavigationElement` / `BreadcrumbList` where appropriate (§8), and **nav labels are not headings** (§8) — the derived menu must preserve the clean heading outline.
+- `nav` is a typed field. `group` and `subgroup` are enums sourced from the skeleton.
+- The skeleton is editable globals.
+- A pure `buildNav(globals, pages)` lives with the renderer, so build and editor agree.
+- Navigation contributes `SiteNavigationElement` / `BreadcrumbList` where appropriate. Nav labels are not headings.
 
 ### 3.6 Collections — repeated content
 
-Some content is **many of the same thing**: case studies, blog posts, team members, services, testimonials, FAQ answers, download cards. These are a **collection**, not a pile of one-off pages.
-
-**There are two kinds, and the difference is whether the item has a page of its own.**
-
 | Kind | An item is | Declares (§4.6) | Typical |
 |---|---|---|---|
-| **Routable** | a page that happens to be one of many | `template` **and** `route` | case studies at `/past-work/:slug`, team members, locations |
-| **Data-feed** | a typed record that is only ever aggregated into someone else's slot | `itemSchema` | FAQ answers, testimonials, download cards |
+| **Routable** | a page that is one of many | `template` **and** `route` | case studies, projects, team members |
+| **Data-feed** | a typed record aggregated into another page's slot | `itemSchema` | FAQ answers, testimonials, download cards |
 
-- A collection lives in its own directory of item files: `/content/collections/<name>/*.json`.
-- **A routable item is `template` + slot content**, exactly like a page (§3.3). It is *not* a special format — it is a page that happens to be one of many, which is what lets the same editor, the same manifest and the same render path handle it.
-- **A data-feed item is a flat typed record**, declared by an `itemSchema` (§4.2.1, same schema-first machinery as a block) and emitted into the manifest under `collections` so an editor can build a form for it. It has no template and no route, because it has no page.
-- **Listings are derived, never hand-authored.** A "related items" row or an index page is computed from the collection itself; it is not a template slot the editor has to keep in sync.
+- A collection lives in `/content/collections/<name>/*.json`.
+- A routable item is `template` + slot content, exactly like a page.
+- A data-feed item is a flat typed record described by an `itemSchema`, emitted into the manifest under `collections`.
+- Listings and "related items" rows are computed from the collection. They are never hand-authored slots.
+- Every item, of either kind, is described by a schema that reaches the manifest.
+- **Never name a template that does not exist.** A collection whose page design is not built yet is data-feed until the template lands.
+- **Items are JSON, not MDX.** MDX is only for genuine long-form prose bodies.
 
-> **Why the second kind exists** (added in 1.10). Until 1.9 this section said flatly that *every* item is `template` + slot content — while §3.3's own worked example sourced FAQ content into a slot with `"faq": { "source": { "category": "example" } }`, which is the data-feed pattern under another name. The document required one thing and demonstrated another.
->
-> The cost of that landed on a real site with four collections. Three of them — FAQ answers, testimonials, download cards — are aggregated into `FaqAccordion`, `TestimonialTrio` and `ResourcesGrid` on pages that already exist. They will never have a route. Forced to name a template, the build had exactly three options, and all three were bad: name a template that does not exist (which is what shipped, and which an editor reading the descriptor verbatim cannot act on); invent a per-item block and template so a PDF download link can pretend to be a page; or declare nothing, and have every item be editable nowhere. The fourth collection — the three centres — *is* routable and genuinely was waiting on a page design, which is the case the routable kind already covered.
->
-> **The rule the two kinds share is the one that matters:** every item, of either kind, is described by a schema that reaches the manifest. What changes is whether that description is a template of slots or an item schema. Nothing is allowed to be editable nowhere.
+### 3.7 Redirects — content, not hosting
 
-> ⚠️ **Never name a template an item does not have.** A `template` key pointing at a file that is not in `paths.templates` is worse than no key: a tool reads the descriptor verbatim (§4.6) and offers to author an item it cannot render. If the page type is designed but not built, the collection is data-feed until it is built, and gains `template` + `route` on the day the template lands. The generator must fail on the mismatch (§4.4.1) so the two cannot drift.
+- Redirects live in `/content/redirects.json` as `{ from, to, status? }`. The default status is 301. Use 308 where the method must be preserved.
+- Write `from` with the trailing slash, in the form the site serves.
+- `from` may end in `/*` (a wildcard). `to` may carry one `*` for the captured tail.
+- The build emits them as host redirects.
+- The editor writes this file. A slug rename offers to create the redirect at that moment.
+- **If a site has no redirects file, the editor blocks slug renames** (§4.6).
+- **Wiring is a gate item** (§4.4). Prove it on a deployment (§3.7.2).
 
-> ⚠️ **Items are JSON, not MDX** (changed in 1.5). MDX is for genuine long-form prose bodies and nothing else. A site shipped its case studies as `.mdx` files with **empty bodies** and every field in YAML frontmatter: uneditable through the block editor, and YAML silently parsed a comma-containing paragraph into a list, publishing sentence fragments on a live page. If an item's content is structured — headings, stats, quotes, images — it is slots, and slots are JSON.
+**On Astro + Vercel:**
 
-### 3.7 Redirects — content, not a one-off
+1. Pass exact rules to Astro's `redirects` option.
+2. In one `astro:build:done` hook, add a companion route `^/<path>/?$` for every exact rule, so both slash forms match.
+3. In the same hook, add each wildcard as `^/<prefix>(?:/(.*))?$` with `Location` built from `to` (`*` → `$1`). Astro cannot emit wildcards in a static build.
+4. Splice the companions and wildcards before the first `handle` entry: exact rules first, then wildcards.
+5. Append the 404 error route (§3.7.3) in the same hook.
+6. Read and write `.vercel/output/config.json` once. Two hooks that each rewrite it can discard each other's routes.
 
-Renaming a page breaks every existing link to it, so the redirect that repairs that is **part of the content model**, not a hosting detail someone remembers to add.
+#### 3.7.1 The rules live in the checks package
 
-- Redirects live in `/content/redirects.json` as `old path → new path` with a status (301 permanent by default, 308 where the method must be preserved).
-- The build **emits them as host redirects** (Astro config / host redirect rules), so they work at the edge without a request reaching the app. **Emitting a rule is not the same as matching a request** — see §3.7.1, because the form you write and the form the framework compiles are not always the same URL.
-- The editor writes this file, which means a slug rename can *offer* to create the redirect at the moment the rename happens — the only moment anyone has the old path to hand.
-- **If a site has no redirects file, slug renames must be blocked** (§4.6). Silently breaking inbound links is worse than refusing the rename.
-
-> ⚠️ **A redirects file that nothing reads is the default state, not an edge case.** On one site the file existed, `site.json` declared it, the editor wrote to it — and `astro.config.mjs` never imported it. Every rule was inert: added, saved, merged, ignored. Nobody could tell from the repo, because *every artifact was present*. **Wiring is a gate item (§4.4), and the check is a real redirect on a real deployment** — see §3.7.2.
-
-#### 3.7.1 The rules live in the checks package, not here
-
-**Every rule a redirect list must obey — and the failure each was written after — is in [`@traction/site-checks`](https://github.com/traction-marketing-nz/traction-website-standard-checks), in [RULES.md](https://github.com/traction-marketing-nz/traction-website-standard-checks/blob/main/RULES.md).** This document does not restate them, and a site does not re-derive them: it installs the package and passes it (§11.0).
-
-That is a deliberate reversal. This section used to carry the rules in a table, and within a single day it said "two rules" above a list of four, disagreed with the package's own list, and left two rules implemented nowhere but in two hand-written per-site copies. A rule kept in two places drifts, and the copy nobody runs is the one that rots — so the rules live where they execute, and the reasons live beside them.
-
-What stays here is what a checker cannot hold: redirects are **content** (§3.7), not a hosting detail, and the site must be able to add one at the moment a slug is renamed.
+Every rule a redirect list obeys is in [RULES.md](./RULES.md) and runs in `traction-site check`. Do not re-implement them in a site.
 
 #### 3.7.2 Prove one redirect on a real deployment
 
-The package reads the build. That a host honours the table it was given is a separate claim, and the only way to settle it is to request the old path on the deployed site and read the status — a **301 to the new path**, not a green build and not a reading of the config.
+Request an old path on the deployed site. Confirm a **301 to the new path**.
 
-Note that preview URLs often sit behind the host's access protection, which 302s anonymous requests to a login page; an automated check sees *that*, not your redirect. Test through an authenticated session, or on production straight after the deploy.
+- Preview URLs sit behind Vercel's access protection, which 302s anonymous requests to a login page. Test through an authenticated session, or on production straight after the deploy.
 
-### 3.7.3 The 404 page — a content page, and a host route to serve it
+#### 3.7.3 The 404 page
 
-Every site ships a **branded 404**, and it is built the same way as everything else: an ordinary content page (`content/pages/404.json` + a small template), so its copy is editable in the CMS by whoever notices it reads badly. A hand-coded error page is the same conformance failure as a hand-coded home page (§4.4).
-
-**Two halves, and the second is the one everyone misses:**
-
-1. **The page.** The generator emits it as top-level `404.html` from the `/404` route.
-2. **The host route that serves it.** Vercel's Build Output API v3 does **not** serve a static `404.html` automatically, and the Astro adapter emits no error route. So the branded page ships inside every deployment with *nothing pointing at it*, and unknown URLs get the platform's bare `404: NOT_FOUND` card. Append the error phase explicitly:
+1. **The page.** An ordinary content page: `content/pages/404.json` + a small template. The generator emits top-level `404.html`.
+2. **`seo.noIndex: true`** on the 404 page, so it stays out of the sitemap and carries a robots `noindex`.
+3. **The host route.** Vercel does not serve `404.html` by itself. Append the error phase in the build hook:
 
 ```jsonc
-// .vercel/output/config.json — appended in an astro:build:done hook
+// .vercel/output/config.json
 { "handle": "error" },
 { "src": "/.*", "status": 404, "dest": "/404.html" }
 ```
 
-The `error` phase runs only after filesystem and every earlier route has failed to match, so it cannot shadow a real page.
+- **Keep the status 404.** Never redirect unknown URLs to the home page.
+- **Verify on a deployment.** Request a path that cannot exist. Confirm the branded page and status 404.
 
-> **Both live sites had this wrong simultaneously.** Both served the platform 404 in production. Neither build failed, nothing in either repo looked missing, and the branded page was present in the deployment the whole time.
+### 3.8 Globals — site-wide singletons
 
-**Keep the status 404.** The tempting "catch-all redirect to the homepage" is a **soft 404**: search engines read the 200 as "this URL exists", keep dead URLs in the index, and can suppress the target page too. Unknown URLs should say they are unknown; URLs that genuinely *moved* get a real 301 in `redirects.json` (§3.7).
+Values that are identical on every page live once in `content/globals.json`. Blocks read them from globals. They are never copied into a page's content.
 
-**Verify on a deployment** (§3.7.2), not from the build output — request a path that cannot exist and read the page you actually get.
+Globals hold:
 
-### 3.8 Globals — site-wide singletons (never duplicate them into a page)
+- site name, site URL, legal entity, default locale
+- contact details (phone, email, address) and social profiles (`sameAs`)
+- brand assets: logo, **favicon** (`brand.favicon`), default OG image
+- the nav and footer skeleton (§3.5)
+- analytics IDs (§7.2)
+- enquiry recipient and sender, and the enquiry confirmation copy (§7.1)
 
-Some values are **the same on every page**: the site name, contact details (phone, email, address), social profiles (`sameAs`), the brand logo, the legal entity, the default OG image, the default locale — plus the nav/footer skeleton (§3.5) and redirects (§3.7). These live **once** in the site globals (`content/globals.json`), never in any page.
+Rules:
 
-**The rule:** a value that is identical site-wide lives in globals **once**; blocks and templates **read it from globals**; it is **never copied into a page's content.** A global is **not** a block content-prop — it does not appear in `content/pages/*.json` or in a page's editing surface; it is edited in the **globals editor**.
-
-> ⚠️ **The duplication trap (a real, observed bug).** If a site-wide value is *also* stored as a block prop in page content, the **page copy silently wins** — editing the global has no effect, because the block renders its page-content copy. The contact phone in a CTA block is the textbook case: keep it in `globals.contact`, have the CTA read it from there; do **not** give the CTA a `phone` content-prop. Symptom reported by editors: *"I changed the global and nothing updated."* The fix is always the same — delete the page-content copy and the block's prop, and read from globals.
-
-**The test:** *if changing it should change it everywhere, it's a global; if it legitimately varies per page, it's content.* A page may still **override** a global where that is genuinely intended (e.g. a campaign lander with a dedicated number) — but that is an **explicit, documented** per-page field, not an accidental duplicate.
-
-**How blocks consume globals.** The renderer makes globals available to every block (passed in, or imported from the globals module); the build and the editor preview read the **same** globals, so a globals edit propagates everywhere identically — the same property that makes the derived menu consistent (§3.5). **Derived values** (e.g. a `tel:` href computed from the displayed number, or an absolute logo URL for JSON-LD computed from a relative asset path) are computed **in code from the single global field**, so the editor has exactly **one** field to edit and nothing can fall out of sync.
-
-**Auditing for stragglers.** Any literal in component code that is really a site-wide value — the site name in the header/footer, a hardcoded phone, an `og:site_name` string — is a latent version of this bug. When adding globals to an existing build, grep the components for such literals and repoint them at globals.
+- **If changing it should change it everywhere, it is a global.** If it varies per page, it is content.
+- **No block has a content prop that duplicates a global.** A page copy silently overrides the global.
+- **A deliberate per-page override** is an explicit, documented page field.
+- **Derived values are computed in code** from the single global: a `tel:` href from the phone, an absolute logo URL for JSON-LD, the hostnames in `security.allowedDomains` (§7.1).
+- **Copy with placeholders** (`{email}`, `{phone}`, `{phoneDisplay}`) is rendered as parts, so the placeholders become real `mailto:` / `tel:` links.
+- **The favicon** renders from `brand.favicon` in the base layout. Empty renders no `<link rel="icon">`. An SVG favicon gets `type="image/svg+xml"`.
+- **Audit components for hardcoded site-wide literals** (site name, phone, `og:site_name`) and point them at globals.
 
 #### 3.8.1 Globals are public — never put a secret in them
 
-Globals feel like configuration, and configuration is where people put API keys. **They must not.** `globals.json` is committed to the repo, editable by anyone with content access — and, decisively, **it reaches the browser**: the moment one hydrated island imports the globals module, the bundler pulls the values it references into that island's client chunk. There is no warning; the file simply appears, in part, on the public internet.
+Globals are committed, editable by anyone with content access, and reach the browser when a hydrated island imports them.
 
-> **Verified, not assumed.** On a live site the studio's phone number — a legitimate global — was found in a client bundle at `_astro/Hero.<hash>.js`. That is correct and harmless for a phone number. It is catastrophic for a key.
+| Kind of value | Example | Lives in |
+|---|---|---|
+| Editable, public | notify address, sender address, phone, social URLs | `globals.json` |
+| Editable, private | none — a secret is not editable content | — |
+| Secret | API keys, tokens, webhook secrets, DB URLs | Host environment variables |
 
-The line is **who the value is for**, not how it feels to edit:
-
-| Kind of value | Example | Lives in | Why |
-|---|---|---|---|
-| Editable, public | notify address, sender address, phone, address, social URLs | `globals.json` | The client should change these without a deploy; they're published anyway |
-| Editable, private | *(none — this cell is deliberately empty)* | — | If it must stay secret it isn't editable content |
-| Secret | API keys, tokens, webhook signing secrets, DB URLs | Host environment variables | Never committed, never bundled, rotated without a content edit |
-
-So a form pipeline splits: **recipient and sender in globals** (the client changes who gets enquiries themselves), **the API key in the environment** — always. Put a one-line comment saying so at the point of use, because the next person will be tempted to "tidy" the last env var into globals for consistency.
-
-**A second trap in the same area: build-time inlining.** A bundler replaces `import.meta.env.SOME_KEY` with its **build-time value**, which turns an apparently-runtime lookup into a string literal in the artifact and makes any `process.env` fallback dead code. Gate dev-only reads behind a statically-false condition (`import.meta.env.DEV`) so the branch is eliminated in production builds.
-
-**The check (run it once per site, before launch):** build the site, then grep the built output — client *and* server — for each secret's value. Nothing should match.
+- An enquiry pipeline keeps recipient and sender in globals and the API key in the environment. Put a one-line comment saying so at the point of use.
+- **`import.meta.env.X` is inlined at build time.** Gate dev-only reads behind `import.meta.env.DEV`.
+- **Grep the build for every secret's value** before launch, client and server:
 
 ```bash
 npm run build && grep -rl "$SECRET_VALUE" dist/ .vercel/ && echo "LEAKED" || echo "clean"
 ```
 
-Run the same grep for any value you *moved* into globals, to confirm you understood which side of the line it landed on.
+### 3.9 Hidden blocks
+
+The editor hides a block without deleting its content:
+
+- `hidden: true` on a **template slot** hides it on every page that uses the template.
+- `hiddenSlots: ["<slot>"]` on a **page** hides it on that page only.
+
+Rules:
+
+- **One render path honours both.** `renderPage` takes the whole page, not only its content.
+- **Structured data honours both.** A hidden slot contributes nothing to JSON-LD.
+- **The `hiddenBlocks` check** in `traction-site check` proves it on the built output.
 
 ---
 
-## 4. The build stack & the contracts
+## 4. The build stack and the contracts
 
-### 4.1 Recommended stack
-- **Static-site generator with an islands model** (default: **Astro**) for the build/orchestration layer. Ships ~zero JS by default; opt into interactivity per island; per-island code-splitting; first-class adapters for serverless hosts; full control of `<head>` for SEO/AEO.
-- **Blocks authored as standard framework components** (React or Preact) — **not** generator-proprietary templates. This is essential: the same components must be importable by the editor for live preview (§5). Author in the framework your editor uses; alias to a smaller runtime (e.g. `react → preact/compat`) at build time to keep hydrated islands tiny.
-- **Styling:** design tokens (CSS custom properties) + per-component CSS. No utility-framework lock-in required; no inline styles in content.
+### 4.1 Stack
 
-> Rejected alternatives and why: app frameworks that ship a client runtime by default (heavier — hurts "tight & small"); template-language generators whose components can't be imported by a JS editor (breaks the shared-renderer/live-preview contract).
+- **Astro** (static output, islands) for the build. Add the Vercel adapter for on-demand routes.
+- **Blocks are React components**, aliased to Preact at build time where it keeps islands small.
+- **Styling:** design tokens + per-component CSS. No inline styles in content.
+- **Interactivity:** static blocks attach small behaviours with an inline `<script>` (§3.4 rule 5). Only stateful blocks hydrate.
 
-### 4.2 The three contracts (what everything negotiates through)
-1. **Block manifest** — a machine-readable description of every block (its slots, content props, variant enums). **Schema-first:** each block declares **one** typed schema (a Zod / Standard-Schema object) as its single source of truth; the manifest entry, the component's TS prop types (via inference), and runtime validation (§11) are all *derived* from that one declaration — never hand-kept in parallel. That is what makes "can't drift" literal: one definition, generated three ways. The editor reads the manifest to know the vocabulary.
-2. **File format** — open JSON for templates, pages and collection items (and a globals file for header/footer/nav/site details); MDX only for genuine long-form prose (§3.6). Navigation is **derived, not a hand-kept link list** (§3.5): a curated menu skeleton in globals × per-page opt-in `nav` entries.
-3. **Renderer package** — a `renderPage(template, content)` function (block registry + components). **Optional, not required** — see §5: preview is the site's own branch build.
+### 4.2 The three contracts
+
+1. **Block manifest.** A machine-readable description of every block: slots, content props, variant enums. Each block declares one Zod schema. The manifest entry, the TypeScript prop types and runtime validation are all derived from it.
+2. **File format.** Open JSON for templates, pages, collection items and globals. MDX only for genuine long-form prose.
+3. **Renderer package.** `renderPage(page)` with a block registry. Optional for the editor (§5).
 
 #### 4.2.1 Schema-first generation
 
-The manifest is **generated by a script**, never edited by hand. One schema per block; the generator walks the schemas and emits `block-manifest.json`. Hand-editing it guarantees drift, and drift here is silent — the editor believes the manifest, the build believes the code.
+A script generates `block-manifest.json` from the schemas. Never edit it by hand. The script fails loudly when it produces nothing useful (§4.4.1).
 
-Because the manifest is produced by a script, the script must fail loudly when it produces nothing useful — see §4.4.1, which exists because a generator lied for months.
+#### 4.2.2 Manifest field rules
 
-#### 4.2.2 Manifest field rules — it is read by a machine that has never seen your code
+The manifest is read by a tool that has only the manifest.
 
-The manifest is consumed by a tool that has **only** the manifest. Anything it has to infer, it will infer wrongly on some site, and the failure is silent — a form field that doesn't appear, or one that appears and destroys data. Four rules, each from an observed bug:
+1. **Emit `required: true|false` on every prop.** One dialect only. (A reader still normalises `optional === true || required === false || "default" in spec`.)
+2. **Every array declares a complete, usable `of`, recursively.** An object item names its own `props`. Every item descriptor has a `type` the editor renders. Nested arrays are validated the same way. `of: { type: "object" }` with no `props` fails.
+3. **Bounds are real.** `min`/`max` come from what the layout requires, never from the seed content. State `max` only for a fixed layout (a 4-tile grid: `min: 4, max: 4`).
+4. **Every prop has a human `label`**, including nested props and array item descriptors.
+5. **Defaults survive generation.** Every `.default()` in a schema appears as `default` in the manifest.
 
-1. **State optionality explicitly, one way.** Emit `required: true|false` on **every** prop. Do not encode it as absence, and do not mix dialects. Two sister sites expressed the same fact three ways — `optional: true`, `required: false`, and "has a `default`" — and a reader that understood only the first marked every optional prop on the second site as required, so the editor refused to save a page for a legitimately empty field. A reader must still normalise defensively (`optional === true || required === false || "default" in spec`), but the generator should never make it guess.
-2. **Every array declares a *complete* `of` — its item descriptor, recursively.** Without one the editor cannot know whether an entry is a string or an object, and the sensible-looking fallback (`{type: "string"}`) is the dangerous one: **objects render as a single empty textarea, and the first keystroke overwrites the whole entry.** One site's lists were each one edit away from silent data loss for exactly this reason.
-   **`of: {type: "object"}` with no `props` does not satisfy this** — it is the same failure wearing a descriptor. An object item must name its own fields, or the editor still cannot build a form for an entry. Check for the *usable* descriptor, not the presence of the key: 26 arrays on one site passed a naive "has `of`" test while remaining read-only in the editor. An item descriptor must also carry a `type` the editor actually renders — a missing or misspelled type is as uneditable as a missing descriptor — and a nested array must be validated the same way, recursively. If the generator cannot determine an item's fields, it must fail (§4.4.1), not emit an empty shell.
-3. **Bounds must be real.** `min`/`max` (§4.5.2) come from what the block's layout genuinely requires, never from what the seed content happens to contain. An invented `max: 10` on a prose array — no such limit existed in the block — blocked a legitimate 12-paragraph case study from saving at all. State a `max` only for a genuinely fixed layout (a 4-tile grid: `min: 4, max: 4`); otherwise state `min` alone.
-4. **Every prop carries a human label** (§4.5.4), including nested object props and array-item props — the walk must recurse through `props` and `of.props`, or nested fields silently show raw keys.
-5. **Defaults must survive generation.** A `.default()` in the schema means the editor should pre-fill that value. Verify the generator actually emits them — on one site **0 of 268 props** carried a default against ~80 `.default()` calls, because the unwrapping logic treated a defaulted field as merely optional and discarded the wrapper. The symptom was an editor placing a fresh block and getting an unselected theme and an empty dropdown.
-
-> **Corollary for the editor:** when a save is blocked, the UI must **say which field and why**. A greyed-out button is unactionable, and it hides bugs in the manifest itself — the invented-`max` bug above was invisible until the blocking reason was displayed, at which point it was obvious in seconds.
+**Editor corollary:** a blocked save names the field and the reason.
 
 ### 4.3 The data-driven render path
-The build composes a page by mapping each template slot to a block type and resolving it via the registry:
 
 ```
-blocks = template.slots.map(slot => ({ type: slot.block, props: content[slot.name] }))
+blocks = template.slots
+  .filter(slot => !slot.hidden && !page.hiddenSlots?.includes(slot.name))
+  .map(slot => ({ type: slot.block, props: page.content[slot.name] }))
 renderPage → registry[block.type] → component → static HTML
 ```
 
-**Verify per project:** that this dynamic registry render still tree-shakes to minimal per-page bundles (it does with Astro's per-island splitting — a page only ships JS for islands it actually renders — but confirm it in a spike before scaling).
+Confirm on each new site that this still splits to minimal per-page bundles.
 
-### 4.4 Editor-readiness gate (the contracts are a *gate*, not aspiration)
+### 4.4 Editor-readiness gate
 
-Design fidelity is gated (§13/§14); **editor-readiness must be gated too**, or a faithful but hand-coded site passes every other check while being un-editable. This was a real failure mode: a site can render the design perfectly as framework pages, pass the fidelity gate, emit all the SEO — and still not be editable, because the §3 content model and the §4 contracts were treated as optional. They are not. A build is editor-ready only when **all** of these hold:
+A build is editor-ready only when **all** of these hold:
 
-- **Block manifest exists and validates** — `block-manifest.json` is *generated* from the block schemas (§4.2.1) and lists every block a template can use.
-- **The generator fails loudly when it produces nothing useful (§4.4.1)** — it exits non-zero, and does not overwrite the manifest, if it described zero blocks, skipped a block file, left a block a template can place undescribed, or left a prop without a label. A generator that quietly emits nothing is indistinguishable from one that works.
-- **Every route is content-data** — each page is a `template` + slot `content` file under `/content/pages` (or a routable collection item, §3.6). **No route renders content or layout baked into framework code.** Grep test: a page file holds almost no copy — the copy lives in `/content`. If you ported a hand-coded page and "it looks right," that is *not* enough; it must be decomposed into blocks + content-data.
-- **Every collection item is described by something** (§3.6) — a `template` of slots if the item is routable, an `itemSchema` if it is a data feed, and that description reaches the manifest. "Editable nowhere" is the failure; which of the two kinds describes it is a property of the content, not a loophole.
-- **Templates are data** — every page references a template in `/templates`; the template set is finite and declared.
-- **One render path** — a single data-driven render (§4.3) turns a page into HTML. Preview is the site's own branch build of the change (§5); a renderer package shared with the editor is optional, not required.
-- **The site describes itself (§4.6)** — `site.json` exists, records `standardVersion`, and names every path and collection a tool needs. No tool should have to infer the layout.
-- **The loop is proven** — edit content → commit → build → live, demonstrated on at least one real page; and the editor's own readiness check (e.g. Pulse's) reports green.
-- **`traction-site check` runs in the build and passes** (§11.0) — the gate items below are enforced by it, not by reading this list. A site that has not installed it has not been checked, however green its build.
-- **Redirects are WIRED and proven** (§3.7, §3.7.2) — the build reads `redirects.json`, `traction-site check` passes, and one real rule 301s correctly on a deployment. A declared-but-unread file is the default failure; a rule that matches only the un-slashed form is the second.
-- **The 404 is branded, editable, and actually served** (§3.7.3) — a content page, plus the host error route, verified by requesting a path that cannot exist.
-- **Rich props render as declared** (§3.1, §3.1.1) — every `richtext` prop renders through the site's allowlist Markdown module and its pinned `test-markdown` checks pass; no prop is typed `richline`/`richtext` while its block interpolates plain text. The manifest and the component are two files; the gate is what stops them lying about each other.
-- **The per-page `seo` object is consumed** (§8.1) — the base layout reads every declared key, and one page proves it: set a title/description, build, see them in the emitted `<head>`.
-- **Author-complete (§4.5)** — the editor can *add* a page (a generic page route exists), every block survives any schema-valid content (cleared optionals, array min/max), and the manifest carries editor affordances (labels, help, defaults).
+- **`traction-site check` runs in `build` and passes** (§11.0).
+- **The block manifest exists, is generated** (§4.2.1), and lists every block a template can use.
+- **The generator fails loudly** on the conditions in §4.4.1, and does not write on failure.
+- **Every route is content-data.** Each page is a `template` + slot `content` file under `paths.pages`, or a routable collection item. No route renders content or layout from framework code.
+- **Every collection item is described** — a `template` if routable, an `itemSchema` if data-feed — and that description reaches the manifest.
+- **Templates are data** in `paths.templates`.
+- **One render path** turns a page into HTML.
+- **`site.json` exists** (§4.6), records `standardVersion`, and names every path and collection.
+- **The loop is proven:** edit → commit → build → live on one real page, and the editor's readiness check is green.
+- **Redirects are wired and proven** (§3.7, §3.7.2).
+- **The 404 is branded, editable, noindexed and served** (§3.7.3).
+- **Rich props render as declared** (§3.1, §3.1.1), and `test-markdown` passes.
+- **The per-page `seo` object is consumed** (§8.1).
+- **Hidden blocks are honoured** (§3.9).
+- **Video masters are on Mux** — `check-videos` runs in `build` and passes (§3.4.2). Required when the site has video.
+- **Author-complete** (§4.5).
 
-Run this gate **per template**, *alongside* the fidelity gate (§13/§14): a template is "done" only when it is both pixel-faithful **and** editor-ready. A pixel-perfect hand-coded template is a **failed** template.
+Run this gate per template, alongside the fidelity gate (§13, §14). A pixel-perfect hand-coded template fails.
 
 #### 4.4.1 The generator must not fail silently
 
-The contracts are produced by scripts, and **a script that produces nothing looks exactly like a script that works**: it prints, it exits 0, it writes a file. Specification does not protect against this — the site had a generator precisely *because* the standard demanded one.
+The manifest generator checks its own output before writing. It exits non-zero on any of these:
 
-> **Observed failure.** A site's manifest generator filtered `extname(f) === '.ts'` while every block was a `.tsx` file, so the loop matched **nothing**. It exited 0 on every run. The stale, hand-edited manifest it left behind was accepted as generated output for months, describing 14 of the 29 blocks its templates actually used — and every page built from the other 15 was uneditable, with good schemas sitting unread in the repo.
->
-> Nobody was careless. The script lied, and no check called it.
-
-The generator therefore asserts its own output before writing, and exits non-zero on any of:
-
-| Check | What it catches |
+| Check | Catches |
 |---|---|
-| Zero blocks described | The scan matched nothing — wrong directory, wrong extension, wrong glob |
-| Any block file skipped | A load/parse failure downgraded to a warning nobody reads |
-| A template slot's block undescribed | The editor cannot build a form, so that page is uneditable |
-| A template slot's block **not in the block registry** | Both render paths do `Block ? <Block/> : null`, so a typo in a slot name **drops an entire section from a live page** with a green build and a green typecheck. The manifest check cannot catch this: the manifest and the registry are two separate lists |
-| A file in `/templates` **not in the template registry** | The same failure one level up, and worse: the route looks the name up, gets `undefined`, and renders a page with header and footer and **nothing in between**. Observed shipping a live 404 page that was completely blank — right title, right chrome, no content, green build. If the site keeps a hand-maintained registry (`templates.ts`), adding a template file without registering it must fail here rather than at a customer |
-| Any array prop whose `of` is missing **or unusable** | An object item with no `props`, a missing or unknown `type`, or an unvalidated nested array: the editor cannot build a form for an entry, so it either guesses and destroys data on the first edit or shows the list read-only (§4.2.2). Assert the descriptor is *usable*, not merely present |
-| Any prop without a `label`, **including an array's item descriptor** | The author sees the raw key (§4.5.4). The item descriptor is the row header of a repeater, and "it inherits from the array" is a reasoning a generator can hold and no downstream reader can — one site skipped exactly that case and shipped nine unlabelled repeaters |
-| A collection declaring **neither** `template` nor `itemSchema`, or declaring one that does not resolve | Undescribed items are editable nowhere (§3.6, §4.6); a dangling reference offers the author content that cannot be rendered or validated |
+| Zero blocks described | A scan that matched nothing (wrong directory, extension or glob) |
+| Any block file skipped | A load or parse failure |
+| A template slot's block undescribed | A page the editor cannot edit |
+| A template slot's block not in the block registry | A section dropped from a live page |
+| A file in `/templates` not in the template registry | A page that renders header and footer and nothing between |
+| An array prop whose `of` is missing or unusable | An editor that guesses and destroys data, or shows the list read-only (§4.2.2) |
+| A prop without a `label`, including an array item descriptor | Raw keys shown to the author |
+| A collection declaring neither `template` nor `itemSchema`, or one that does not resolve | Items editable nowhere |
 
-Keep the failure message specific enough to act on — name the blocks or props, not just a count. And **never write the output file on failure**: overwriting a good manifest with an empty one turns a loud error into a silent regression.
+- Name the offending blocks or props in the message.
+- **Never write the output file on failure.**
+- **Exit non-zero on any thrown error.** `main().catch(console.error)` exits 0. Use `main().catch(e => { console.error(e); process.exit(1); })`.
+- **Test the checks.** Mutate the input, confirm a non-zero exit that names the offender, and confirm no file was written.
 
-**Exit non-zero on *any* failure, not just the deliberate checks.** `main().catch(console.error)` prints the error and exits 0, so a malformed template JSON, a missing directory or a transpile fault all report success and `generate && next-step` sails on. That is the same failure this section exists to prevent, merely relocated to the paths that throw.
+### 4.5 Authoring robustness
 
-**And test the checks themselves.** A check that cannot fail is worth nothing, and it is easy to write one — the array-descriptor check above passed `of: {}` and a misspelled `type` on its first implementation, the exact shapes it existed to catch. Mutate the input deliberately, confirm the generator exits non-zero and names the offending prop, and confirm it did **not** write the file.
+Build every block and route for the content the editor will create, not the seed content.
 
-> **The general rule this is an instance of:** the standard reliably produces what it can state *declaratively* — where content lives, what shape an item is, which prop types exist. It cannot, by itself, produce things that require the artifact to actually **work**, because someone can truthfully believe they have done it while it is false. Those need a check that runs, not a sentence that is read.
+1. **The editor can add pages.** A generic catch-all route turns any `content/pages/*.json` into a page.
+2. **Array cardinality is declared and handled.** Every array or repeatable slot declares real bounds, and the block renders any count in range. A fixed layout sets `min == max` and still guards against bad data.
+3. **Every block renders any schema-valid content.** Cleared optionals, empty arrays and missing images give a sensible empty state, never a broken tag or a crash.
+4. **The manifest carries editor affordances:** label, help text, default, order/group, required.
+5. **One field, not per-breakpoint variants.** A `*Mobile` content variant is a justified exception.
+6. **The image upload loop is proven** on one real block before launch: editor upload → committed under `paths.media` → host optimization → responsive image on the page.
+7. **The video loop is proven** on one real block before launch: master committed to `paths.videos` → Action uploads to Mux → manifest and poster committed → stream plays on the page (MEDIA-STRATEGY §5).
 
-### 4.5 Authoring robustness — design for editing, not just building
+### 4.6 The site descriptor — `site.json`
 
-The contracts *existing* (§4.4) is necessary but not sufficient: a site can pass every gate and still **break or confuse the moment a human edits it**. Editing is continuous and adversarial — assume the editor *will* clear a field, add a tenth item, reorder a list, create a brand-new page, and upload a 6 MB photo. A block or build that only works for the exact content the developer happened to seed is **not done**. Build to these (and check them in §4.4):
-
-1. **The editor can *add* pages, not just edit them.** The build turns **any** `content/pages/*.json` into a route via a **generic page route** (a catch-all that loads the page data, resolves its template, and renders it) — not a hand-wired page module per file. If adding a page needs a developer to add a route, the site is *edit-only*, not author-complete.
-2. **Array cardinality is declared and handled.** Every `array<T>` / `repeatable` slot declares `min`/`max` in the manifest, and the block renders correctly for **any** count in range. A block that assumes a fixed number of items (e.g. destructures "the 4 tiles") is a crash waiting for the editor to add a fifth. A genuinely fixed-layout block sets `min == max` so the editor enforces it — *and the block still guards against malformed data*. Declare only bounds that are real (§4.2.2 rule 3).
-3. **Every block renders for any schema-valid content.** Cleared optional fields, empty arrays, missing images → a sensible empty state or omission, never a broken tag or a crash. The editor shows a placeholder for empties; the build ships nothing for them.
-4. **The manifest carries editor affordances.** Each prop has a human **label**, optional **help text**, a **default**, a sensible **order/group**, and required/optional — so the editing UI is usable, not a wall of raw keys. These live alongside the type in the schema-first descriptor (§4.2.1).
-5. **Prefer one field over per-breakpoint variants.** Responsive *layout* is the block's job (§3.2); responsive *content* (a shorter mobile headline) is an editor-UX tax — two fields to keep in sync. Use a single field by default; a `*Mobile` variant is an explicit, justified exception (e.g. a hero line that must wrap differently), not a habit.
-6. **The media-upload loop is proven, not assumed.** Demonstrate editor upload → object storage → transform/CDN → rendered responsive image (§3.4, §6) on one real block before launch. Seeded stock URLs hide a broken upload path.
-
-> **Mindset:** the developer seeds *example* content; the editor will replace, empty, multiply, and extend it. Build every block — and the routing — for the content that *will* exist, not the content that *happens to* exist today.
-
-### 4.6 The site descriptor — the site says where its own contracts live
-
-The three contracts (§4.2) tell a tool *what the vocabulary is*. They do not say **where anything lives**, and §9's canonical layout is the answer unless a real constraint forces otherwise (an Astro project that keeps its **pages and collections** under `src/content/` so the content-collections loader picks them up, for instance — see the per-path rule below). An editor that pattern-matches paths to find content is guessing, and a wrong guess is silent: it reports a collection with zero items rather than an error.
-
-> **Observed failure.** One site's case studies sat at `src/content/case-studies/`; the editor looked for `content/collections/**`. It found the collection's *name* and none of its five items, and said so without complaint. Nobody noticed until the content was audited by hand.
-
-So a conformant site ships a **`site.json` at the repo root** that names its own structure. It is a *site* contract, not editor configuration — the site describes itself; any tool may read it; the site still builds if every tool is deleted (§1.2).
+Every site ships `site.json` at the repo root. It names the site's own structure. Tools read it first and use it verbatim.
 
 ```jsonc
-// site.json — the site describes its own layout
+// site.json
 {
-  "standardVersion": "1.15",
+  "standardVersion": "2.0",
   "name": "Example Site",
   "paths": {
     "blockManifest": "block-manifest.json",
@@ -500,13 +499,16 @@ So a conformant site ships a **`site.json` at the repo root** that names its own
     "globals": "content/globals.json",
     "redirects": "content/redirects.json",
     "media": "public/images",
+    "videos": "videos",
+    "videoManifest": "src/data/video-manifest.json",
     "tokens": "styles/tokens.css"
   },
   "media": {
     "storage": "repo",
     "transform": "host-image-optimization",
     "maxSourceBytes": 1048576,
-    "maxSourceWidth": 2400
+    "maxSourceWidth": 2400,
+    "video": { "storage": "repo-lfs", "delivery": "mux" }
   },
   "collections": [
     {
@@ -524,10 +526,11 @@ So a conformant site ships a **`site.json` at the repo root** that names its own
 }
 ```
 
-**That example is §9's canonical layout, and it is the one to copy.** A site deviates only where a real constraint forces it — an Astro project whose *pages and collections* must sit under `src/content/` for the content-collections loader to see them:
+That example is §9's canonical layout. Copy it.
+
+A site deviates only where a real constraint forces it, per path. For example, an Astro project whose pages must sit under `src/content/` for the content-collections loader:
 
 ```jsonc
-// site.json — a deviating site. Legal, because it is DECLARED.
 "paths": {
   "pages": "src/content/pages",
   "globals": "src/content/globals.json",
@@ -536,187 +539,186 @@ So a conformant site ships a **`site.json` at the repo root** that names its own
 }
 ```
 
-> ⚠️ **Deviate per path, not per directory, and only where the constraint actually bites.** The loader reason reaches pages and collections. It does **not** reach `redirects.json`, which no loader reads — the build config imports it directly — so §3.7's location stands and there is nothing to declare around.
->
-> **Observed cost.** Four sites split two-and-two on that one file, because this example showed `src/content/redirects.json` while §3.7 (three sections earlier) said `/content/redirects.json`. §11.0's checks look in the canonical place, so on half the estate both redirect checks reported *"this site declares no redirects"* and passed — a green tick over a live rule that had made a real page unreachable. **A contradiction between a rule and its own worked example is not cosmetic: the example is what gets copied.**
+Rules:
 
-**Rules:**
-- **Every path is repo-relative and required if the feature exists.** Omit `redirects` only if the site genuinely has no redirects file — and note that omitting it means slug renames must be blocked (§3.7).
-- **`paths.media` is required, and is the ONLY directory an editor may write binaries into.** Undeclared, an editor has to guess — and the guess is also what bounds its path-safety check, so an undeclared media directory silently widens the editor's write scope on a site whose media lives somewhere else. Declare it even when it happens to match the conventional `public/images`.
-- **The `media` block declares how images are handled**, not where they live: `storage` (`repo` — media is committed content, §3.1), `transform` (the host's image optimization, §3.4), `maxSourceBytes` and `maxSourceWidth` (what an editor may upload, and what it should offer to downscale to). An editor reads these to state the limits *before* a byte is sent, rather than returning an opaque rejection afterwards.
-- **Collections are declared explicitly**, each with its directory and — depending on its kind (§3.6) — either `template` **and** `route` (routable), or `itemSchema` (data-feed). A collection that isn't declared does not exist as far as any tool is concerned, and one that declares *neither* is undescribed content: its items are editable nowhere, so the generator fails (§4.4.1).
-- **A declared `template` must exist in `paths.templates`, and a declared `itemSchema` must be exported by the site's schema module.** Both are read verbatim by tools that cannot check them against anything else, so a dangling reference is silent — it produces an offer to author content that cannot be rendered or cannot be validated.
-- **`standardVersion` is recorded here**, not in prose in a README — so conformance is machine-checkable as the standard evolves.
-- **The descriptor is the resolution order.** A tool reads `site.json` first and uses it verbatim; falling back to guessing paths is a compatibility shim for pre-1.5 sites, not the contract. **A tool that hardcodes a default instead of reading the descriptor is not conformant**, and the failure is silent — a path it cannot find is indistinguishable from a feature the site does not have. **A declared path that is missing on disk is an error; only an *undeclared* one is an absent feature.**
-- **Deviation is per path, and needs a constraint rather than a preference.** Where no constraint applies, §9's layout is the answer. Two sites choosing differently for the same file is how an estate stops being checkable — and the divergence is invisible until something looks in the wrong place and says nothing.
-
----
-
-## 5. Editor integration (editor-agnostic; the editor is *removable*)
-
-The architecture works with any editor; the reference editor is **Pulse**. The contract is one-directional: **the site never depends on the editor; the editor depends on the site's open contracts.**
-
-- **Source of truth = git.** The editor owns the *editing experience* but **publishes content as versioned files to the git repo**. Versioning, rollback, and AI-diffable change review come for free. The live site is static and never depends on the editor being up.
-- **The editor reads the block manifest** to know what it can compose, edits content against the typed schema, and **saves templates + content as open files**.
-- **Preview = the site's own build of the change.** Saving opens a branch + PR, the host builds it, and that deployment *is* the preview. It is byte-accurate by construction — it is the real build of the real commit — and it needs no code shared between the site and the editor. This is the required mechanism.
-- **A shared renderer package is optional.** Where the editor *can* import the site's blocks, `renderPage(template, content)` gives instant in-editor WYSIWYG and is a nice-to-have. It is **not** a conformance requirement: it obliges the editor to execute each client site's components, which does not generalise across sites with different block vocabularies, and a per-site render service is infrastructure most sites should not have to run. Editors that lack it show a **structural preview** derived from the manifest (block order, slot shape, cardinality) for instant feedback, and use the branch build for sign-off.
-
-> **Why this changed (1.5).** The shared-renderer mandate was written for a world with one block library. In practice two sites had entirely disjoint vocabularies — `Hero/CaseLedger/StatBand` vs `Hero/ExpertiseList/ProjectGrid` — so there was nothing to share, and neither site ever shipped a render service. The branch build was already there, already accurate, and already free.
-
-- **Sign-off preview** = staged changes open a PR → the host builds a **preview deployment** → human approves → merge → production build. Preview/branch builds **include `draft` pages** (via a build-mode flag, e.g. `INCLUDE_DRAFTS`) so unpublished work is reviewable on the preview URL; the **production** build excludes them (§3.5). Apart from drafts, preview output is byte-identical to production.
-- **How the editor writes git:** a browser editor can't commit directly; it calls a small backend function holding a git-provider token (e.g. a GitHub App) that commits the files.
-
-**The AI editing loop:**
-```
-1. User asks the editor: "Add an FAQ and tighten the hero subhead."
-2. Editor AI loads the page's block data (typed, validated).
-3. AI proposes block-level changes (append FAQ item, edit hero body).
-4. Schema validates → visual diff + instant preview.
-5. Human reviews, approves.
-6. Editor commits to git → build → live.
-```
-
-**The line:** the editor composes *templates* freely from the block vocabulary; adding a new *block type* is a code change (developer adds a component + manifest entry → it appears in the editor). This preserves "tight & small" and exact fidelity while giving the editor real authoring power.
+- **Every path is repo-relative and required if the feature exists.**
+- **Omit `redirects` only if the site has no redirects file.** Slug renames are then blocked (§3.7).
+- **`paths.media` is required.** It is the only directory an editor may write images into, and it bounds the editor's path-safety check.
+- **`paths.videos` and `paths.videoManifest` are required when the site has video.** `paths.videos` is the only directory an editor may write video masters into.
+- **The `media` block** declares how media is handled: `storage`, `transform`, `maxSourceBytes`, `maxSourceWidth`, and `video`. An editor states the limits before an upload.
+- **Collections are declared explicitly**, with `template` + `route` (routable) or `itemSchema` (data-feed).
+- **A declared `template` exists in `paths.templates`; a declared `itemSchema` is exported by the site's schema module.**
+- **`standardVersion` is recorded here.**
+- **A tool reads the descriptor; it does not hardcode defaults.** A declared path missing on disk is an error. Only an undeclared path is an absent feature.
+- **Deviation is per path and needs a constraint, not a preference.**
 
 ---
 
-## 6. Infrastructure (defaults are portable)
+## 5. Editor integration
+
+The reference editor is **Pulse**. The site never depends on the editor.
+
+- **Git is the source of truth.** The editor publishes content as files to the repo.
+- **The editor reads the block manifest** and `site.json`, edits content against the typed schema, and saves open files.
+- **Preview is the site's own branch build.** Saving opens a branch and PR. The host builds it. That deployment is the preview.
+- **A shared renderer is optional.** Without it the editor shows a structural preview from the manifest and uses the branch build for sign-off.
+- **Preview builds include drafts** through a build flag (for example `INCLUDE_DRAFTS`). Production excludes them. Otherwise preview output equals production.
+- **The editor writes git through a small backend** holding a git-provider token (a GitHub App).
+- **The editor writes video masters through Git LFS** into `paths.videos` (MEDIA-STRATEGY §5).
+
+The AI editing loop:
+
+```
+1. The user asks the editor for a change.
+2. The editor AI loads the page's typed block data.
+3. The AI proposes block-level changes.
+4. The schema validates them; the editor shows a diff and preview.
+5. A human approves.
+6. The editor commits to git → build → live.
+```
+
+Composing templates from existing blocks is an editor task. A new block type is a code change: a component plus a schema, which then appears in the editor.
+
+---
+
+## 6. Infrastructure
 
 | Layer | Default | Role |
 |---|---|---|
-| Static hosting + CDN | **Vercel** | Global edge HTML; automatic preview deployments per push/PR |
-| Serverless / edge functions | **Vercel Functions** *or* the DB's edge functions | Forms, data capture, preview-mode render |
-| Database | **Postgres** (independent — e.g. **Supabase** / Neon) | Runtime data: submissions, experiments, events |
-| Storage | **Supabase Storage / object store** | Media; editor uploads here, referenced by URL |
-| Cron | host cron / scheduled function | Scheduled jobs |
-| Build/CI | **host, git-connected** | Build on push; preview per branch; promote on merge |
+| Static hosting + CDN | **Vercel** | Edge HTML; a preview deployment per PR |
+| Serverless functions | **Vercel Functions** | Forms, data capture |
+| Database | **Postgres** (Supabase or Neon) | Submissions, experiments, events |
+| Object store | **Vercel Blob** (private, per site) | Enquiry records (§7.1) |
+| Images | **The repo** + Vercel Image Optimization | MEDIA-STRATEGY §3 |
+| Video masters | **The repo, under Git LFS** | MEDIA-STRATEGY §4 |
+| Video delivery | **Mux** (via the Vercel Marketplace) | HLS streaming, posters |
+| Video publishing | **GitHub Actions** | Uploads masters to Mux |
+| Build / CI | **Vercel, git-connected** | Build on push; promote on merge |
 
-**Rules that keep it portable:**
-- The **database is an independent managed service**, never a host-branded lock-in. Leaving the host moves a connection string, not the data.
-- **One CDN.** Do not stack a second proxy/CDN in front of the host's edge (double-caching/SSL conflicts). Keep DNS in "DNS-only" mode if your DNS provider also offers a proxy.
-- **The generator's host adapter is swappable** (a config change), because blocks are framework components + a portable renderer.
-- **The repo is still the whole site.** The host is "where we deploy today," not "what the site is."
+Rules:
+
+- **The database is an independent service.** Leaving the host moves a connection string, not data.
+- **One CDN.** Do not put a second proxy in front of the host. Keep DNS in DNS-only mode.
+- **The host adapter is swappable** by config.
+- **The repo is the whole site.** Every master, image and content file needed to rebuild the site is in it.
+- **The GitHub org plan covers LFS storage** for the video masters (GitHub Team: 250 GB).
 
 ---
 
-## 7. Dynamic features pattern
+## 7. Dynamic features
 
-Anything stateful (after a page is served) follows one pattern: **a serverless function + a database table.**
+Anything stateful is **a serverless function + a database table or store**.
 
 | Feature | Pattern |
 |---|---|
-| **Forms / submissions** | Native form → function → DB table (+ any CRM API server-side) |
-| **Lead/attribution capture** | Client captures attribution → posts to a function → DB |
-| **A/B / split testing** | **Client-side deterministic bucketing** (hash a visitor cookie → variant, survives CDN cache); a function records participation/conversion events; a scheduled job decides winners |
-| **Third-party tags** (analytics, pixels) | Via a tag manager, **deferred** (fire after load) so they never block the critical path |
-| **Booking / chat embeds** | Embed, **deferred** (load on interaction/idle) |
-| **Rich media** (sliders, animations) | Native CSS / a tiny island — avoid heavy libraries |
+| **Forms** | Native form → function → store (+ CRM server-side), or a hosted form (§7.1.2) |
+| **Attribution capture** | Client captures → posts to a function → DB |
+| **A/B testing** | Client-side deterministic bucketing on a visitor cookie; a function records events; a scheduled job decides |
+| **Third-party tags** | Through the tag manager only (§7.2) |
+| **Booking / chat embeds** | Loaded on interaction or idle |
+| **Sliders, animation** | CSS or a small island; no heavy libraries |
 
-Keep the data layer minimal — one database covers most sites; add a fast KV/cache only for genuine high-throughput needs.
+**Consent:** non-essential tags fire only after consent where the jurisdiction requires it. Record each site's consent decision.
 
-**Consent** (analytics/pixels): a consent gate (CMP) records the visitor's choice; **non-essential tags fire only after consent**. Essential/first-party measurement may run where lawful. Jurisdiction (NZ Privacy Act / GDPR) is set per §11 localisation. Whether a site has a consent gate is a deliberate decision to record, not a default to drift into.
+### 7.1 Forms and enquiries — native pipeline
 
-### 7.1 Forms & enquiries — the reference implementation
-
-Every brochure site has exactly one dynamic feature that matters commercially: **the enquiry form.** A lost enquiry is a lost client, and the failure is silent by nature — nobody reports the email they never received. This is the one pattern worth specifying end-to-end rather than leaving to each build.
-
-**Shape.** A native `<form method="POST">` posts to a server route (`prerender = false`, which requires a host adapter even on an otherwise fully static site) that does two **independent** things and then redirects:
+A native `<form method="POST">` posts to an on-demand route (`prerender = false`; needs the host adapter):
 
 ```
 form POST → route
-              ├─ notify the studio  (transactional email)
-              └─ append a durable record (object store / DB)
-            → 303 → /contact/success/     (either path succeeded)
-            → 303 → /contact/problem/     (BOTH failed)
+              ├─ notify the studio  (transactional email, HTTP API)
+              └─ append a record    (private object store)
+            → 303 → /contact/success/   (either path succeeded)
+            → 303 → /contact/problem/   (both failed)
 ```
 
-**The two paths are independent on purpose.** Run them concurrently and treat the submission as successful if **either** survives. The email is the working channel; the store is the audit trail for when a mailbox rule eats one. Coupling them means a transient provider outage loses an enquiry that the other path would have caught — and the visitor, who did nothing wrong, is told to try again.
+Rules:
 
-**Rules:**
+1. **Run both paths concurrently. Success is either path succeeding.**
+2. **Never trust an HTTP 200 from an email provider.** Parse the body (SMTP2GO: `data.succeeded`, `data.failed`, `data.failures[]`). Anything but a confirmed success is a failure.
+3. **Use the provider's HTTP send API, not SMTP.**
+4. **Give every outbound call a timeout** (about 10 s).
+5. **Send from a domain we control and have verified.** Set `reply_to` to the enquirer.
+6. **Ship a real failure page** with the studio's phone and email. Never redirect to `?error=1`.
+7. **Recipient and sender live in globals; the API key lives in the environment** (§3.8.1).
+8. **One private store per site, connected to that site's project only.** Path prefixes are not a security boundary.
+9. **Stamp the site into every record.**
+10. **Create the store private and in the nearest region.** Access mode and region cannot change later.
+11. **One immutable JSON per submission**, named `<ISO-timestamp>-<random>.json`. A duplicate name throws.
+12. **Add a honeypot field.** A filled honeypot gets the normal success redirect, and nothing is sent or stored.
+13. **Attribution is real or absent.** Use a hidden field or the `Referer` header, never the endpoint's own URL.
+14. **Pin the store SDK major** to the version the sister sites run.
+15. **List every serving hostname in Astro's `security.allowedDomains`:** the production host and its `www.` variant (derived from `globals.site.url`), and `**.vercel.app` for previews. Otherwise every POST answers 403 "Cross-site POST form submissions are forbidden" on Vercel. A domain change in globals needs a redeploy.
+16. **Answer in place, with progressive enhancement.** An inline script submits with `fetch` and `Accept: application/json`. The endpoint returns JSON for that header and the 303 otherwise. On success the form is replaced by the confirmation copy from globals. On failure the form keeps the visitor's input and shows the error in place. Without JavaScript the native POST and redirects still work.
 
-1. **Never trust an HTTP 200 from an email provider.** SMTP2GO returns **200 even when the send fails** — the real outcome is `data.succeeded` / `data.failed` / `data.failures[]` in the body. Code that checks only `res.ok` reports success for every rejected message. That is exactly how one site ran with an unverified sender domain and **delivered no enquiry email at all**, with a green log the whole time. Parse the body and treat anything but a confirmed success as a throw. Assume the same of any provider until proven otherwise.
-2. **HTTP send API, not SMTP.** A serverless function can be frozen between any two steps of SMTP's stateful handshake, leaving a half-sent message. One HTTPS request either completes or it doesn't.
-3. **Both external calls need a deadline.** "Either path surviving is a success" holds for a provider that *fails*, not one that *hangs*. Without a timeout, a degraded email API holds the request open until the function hits its limit and the platform returns a 504 — so the visitor sees an error for an enquiry that was already safely stored. Set an explicit timeout (~10s) on every outbound call.
-4. **Send from a domain you control and have verified**, and set `reply_to` to the enquirer. Sending as the client's own domain means adding DKIM/SPF records to the DNS zone that carries their real mail — a genuine risk for no benefit, since `reply_to` already routes replies correctly.
-5. **The failure page must exist and must say something.** Redirecting to `/contact/?error=1` is a trap on a static site: a prerendered, never-hydrated page cannot read that parameter, so the visitor lands on a pristine empty form with their typing gone and no indication anything failed. Ship a real failure page carrying the studio's phone and email — if our pipeline is down, the visitor still needs a way to reach the client.
-6. **Recipient and sender live in globals; the API key lives in the environment** (§3.8.1). The client changes who receives enquiries without a deploy; the key never touches the repo or a bundle.
-7. **Isolation between sites is enforced by the store, not by the path.** A store token grants read **and write** to the *entire* store — there is no per-prefix policy. So: **one private store per site, connected to that site's project only.** Path prefixes (`enquiries/<site>/…`) and a `site` field inside each record are organisational and forensic; they are not a security boundary, and must never be described as one.
-8. **Stamp the site into every record.** An exported or forwarded record is then self-identifying — the path alone is lost the moment a file is downloaded.
-9. **Access mode and region are permanent.** A private store cannot be converted to public or back; the region is fixed at creation too. Personal data ⇒ create it **private**, in the nearest region, first time. Getting this wrong means migrating records, not flipping a setting.
-10. **Immutable records, chronological names.** One JSON per submission, `<ISO-timestamp>.json` — listings return lexicographic order, which then reads chronologically — plus a random suffix so two same-instant submissions can't collide (a duplicate name should throw, never overwrite). Note that changing the path scheme later breaks that ordering across the boundary: digits sort before letters, so old records precede new ones regardless of date.
-11. **The endpoint is unauthenticated — add a honeypot.** A hidden field that people never see and naive bots fill in, rejected server-side. Answer with the same redirect a real submission gets so the bot has no signal to adapt, but send and store nothing. Every accepted POST costs a send against a sender reputation shared with our other sites.
-12. **Attribution must be real or absent.** Deriving the submitting page from the request URL yields the *endpoint's own* path (`/api/enquiry`) on every record — worse than an empty field, because it looks like data. Use a hidden field or the `Referer` header.
-
-> **Pin and verify the SDK version.** Private-store support is recent; an older major of the same client rejects every write with `access must be "public"`. A version recalled from memory rather than checked cost a full debug cycle here. Check what the sister site already runs and match it.
-
-#### 7.1.1 Proving it — the only acceptable evidence
-
-A green build proves nothing about this pipeline: the route compiles, the client is imported, the store exists, and **not one byte has been written.** Both real defects found in this pattern — the wrong SDK major and the 200-on-failure — were invisible to every static check and appeared within seconds of an actual submission.
+#### 7.1.1 Proving it
 
 Before launch, for each site:
 
-- [ ] **POST a real enquiry** at the running site (dev is fine for the store path) and confirm the **303 to the success page**.
-- [ ] **Read the record back out of the store** and check the fields — including the `site` stamp and the timestamp. Listing it is not enough; read the body.
-- [ ] **Delete the test record**, and confirm the store is empty again.
-- [ ] **Send one live email** with the production key and confirm it *arrives*. This is the only check that catches an unverified sender domain, because the API reports success either way.
-- [ ] **Exercise the failure paths**: an invalid submission and a honeypot submission each land where they should and store nothing; and with the email provider deliberately misconfigured, a submission **still** reaches the success page and **still** lands in the store.
+- [ ] **POST a real enquiry** and confirm the success response (303 or in-place message).
+- [ ] **Read the record back** from the store and check every field, including `site` and the timestamp.
+- [ ] **Delete the test record.** Confirm the store is empty again.
+- [ ] **Send one live email** with the production key. Confirm it arrives.
+- [ ] **Exercise the failure paths:** an invalid submission and a honeypot submission store nothing; with the email provider misconfigured, a submission still succeeds and still lands in the store.
 
-That last item is worth running deliberately — it is the difference between "the two paths are independent" as a design intention and as a verified fact.
+A test against a deployed site writes to the production store. Use the honeypot field for smoke tests, or delete the record afterwards.
 
-### 7.2 Tag manager — one field, two positions, every page
+#### 7.1.2 Hosted forms (HubSpot)
 
-Every site gets a tag manager, wired the same way. It is the only sanctioned route for third-party tags: analytics, pixels, remarketing, heatmaps. Tags added any other way bypass every control below.
+A site can use a hosted CRM form instead of §7.1. Rules:
 
-**The contract is a single globals field, holding an ID — never tag code:**
+- **Render the embed markup in the server HTML**, so the loader runs on page load and mounts the form.
+- **The form ID is a content prop** on the block (with a sensible default). Portal ID and region are shared settings.
+- **Each form posts to its own thank-you page.** Thank-you pages are ordinary content pages with `seo.noIndex: true`.
+- **Configure the post-submit redirect in the HubSpot form settings.** Do not add a site-side submission listener.
+- **HubSpot's inline thank-you message is the fallback.**
+- **Prove it:** submit once on a deployment and confirm the redirect and the record in HubSpot.
+
+### 7.2 Tag manager
+
+Every site gets a tag manager. It is the only route for third-party tags.
 
 ```jsonc
 // content/globals.json
 "analytics": {
   "gtmContainerId": "",      // e.g. "GTM-XXXXXXX"; empty renders nothing
-  "serverContainerUrl": ""   // optional first-party transport; see §7.2.1
+  "serverContainerUrl": ""   // optional first-party transport; §7.2.1
 }
 ```
 
-**Rules:**
+Rules:
 
-1. **The container ID, not the code.** It is tempting to offer a "paste your tag code here" box, and it must be resisted: globals is committed to the repo, editable through the CMS by anyone with content access, and its contents would be injected as unescaped HTML into *every page*. That is a stored-XSS primitive one bad paste away from production. The ID gives the same power — everything else is configured in the tag manager's own UI, with **no deploy** — which is the entire reason to have a tag manager.
-2. **Validate the ID anyway** (`/^GTM-[A-Z0-9]{4,12}$/`). It is interpolated into a script body, so it is untrusted input regardless of where it came from. Reject and warn loudly; never emit a partially-formed script.
-3. **Two positions, and they are not interchangeable.** The loader goes as high in `<head>` as possible; the `<noscript>` iframe must be the **first element inside `<body>`**. Render them from one component that takes the position as a prop, so the pair cannot drift apart.
-4. **Inject in the shared layout, never per page.** Every built page must pass through one layout that owns both `<head>` and `<body>`. That is what makes coverage automatic — a new page cannot forget the tag. **Verify by counting**, not by reading: build with a test ID and assert it appears in *every* HTML file the build emits.
-5. **Empty is a supported state.** A site with no container yet renders nothing at all — not a broken script, not a console error. Most sites start here.
-6. **Consent is a per-site decision, recorded.** Where the jurisdiction requires it, non-essential tags fire only after consent, which the tag manager's own consent mode can enforce without touching the site.
+1. **Globals hold the container ID, never tag code.**
+2. **Validate the ID** against `/^GTM-[A-Z0-9]{4,12}$/`. Reject and warn on anything else.
+3. **Two positions:** the loader as high in `<head>` as possible; the `<noscript>` iframe as the first element in `<body>`. Render both from one component.
+4. **Inject in the shared layout only.** Prove coverage by counting: build with a test ID and confirm it is in every HTML file.
+5. **Empty renders nothing.**
+6. **Consent** is enforced in the tag manager's consent mode where required.
+7. **One analytics property per measurement need.** The container never loads a duplicate or legacy GA4 property. Every extra tag adds blocking time.
 
-#### 7.2.1 First-party transport — keep the door open, don't walk through it early
+#### 7.2.1 First-party transport
 
-`serverContainerUrl` switches a site from the vendor's endpoint to a **server container on our own subdomain**. Empty means the vendor endpoint. Because both the loader and the `<noscript>` fallback hang off this single origin, moving a site to a first-party transport is a globals edit plus a DNS record — no rebuild, no code change.
-
-**Build the field in from day one; leave it empty.** It costs nothing now and turns a later migration into a config change.
-
-**Be clear-eyed about what it buys**, because two different motivations get conflated:
-
-| Motivation | Verdict |
-|---|---|
-| **Attribution on Safari/Firefox** | **The real case.** ITP caps JS-set cookies at ~7 days, so a visitor who converts after a longer consideration window is counted as brand new and the channel that earned them gets no credit. A server container sets that cookie over HTTP from our own domain, which survives the cap. For clients with month-long sales cycles this is a genuine distortion — and it biases *against* exactly the long-payback channels we usually argue for. |
-| **Evading ad blockers** | **Weak, and think before pursuing it.** Blocklists are not domain-only: they carry path patterns, maintain filters for known first-party proxy paths, and uncloak CNAMEs. It is an arms race with recurring maintenance across every site. It also works against a user's explicit choice, and moving collection onto our own infrastructure *increases* our obligations under the NZ Privacy Act / GDPR — we become the controller rather than someone who embedded a script. |
-
-**Validate the URL** to an `https` origin with no path, since it is concatenated into a script `src`; on anything else, warn and fall back to the vendor endpoint rather than emitting a broken or plaintext transport.
-
-**The trigger to actually adopt it** is evidence, not enthusiasm: a material Safari share *and* attribution you can show is being lost. Then do one site, and compare against the old numbers.
+- Build in `serverContainerUrl` from day one and leave it empty.
+- A value must be an `https` origin with no path. On anything else, warn and use the vendor endpoint.
+- Adopt it only with evidence: a material Safari share and attribution that is measurably lost. Do one site first and compare.
+- Do not adopt it to evade ad blockers.
 
 ---
 
-## 8. SEO / AEO / GEO standard (produced automatically)
+## 8. SEO / AEO / GEO
 
-- **Structured data (JSON-LD) generated from the content model.** Each template declares its schema types; each block contributes its part (an `FAQ` block → `FAQPage`; a service block → `Service`; etc.). **Exactly one** of each entity per page — the model prevents duplicates. Common types: `Organization`, `LocalBusiness`, `ProfessionalService`, `Service`, `FAQPage`, `Article`, `HowTo`, `BreadcrumbList`, `Person`/`ProfilePage`.
-- **Semantic, crawlable HTML** — one `H1`, clean heading outline (navigation labels are **not** headings), `<main>`, `<article>`, `<nav>`. Static output = fully parseable by search and AI answer engines.
-- **`llms.txt`** at the root — a curated plain-text map of the site for LLMs (emerging AEO/GEO standard), generated at build.
-- **Per-page metadata, canonical, OpenGraph/Twitter, XML sitemap, RSS** — all from the content model, via the pinned `seo` object (§8.1).
-- **Performance budget enforced in CI** — e.g. Lighthouse mobile ≥ 95, LCP < 1.5s, TBT < 150ms. Builds fail on regression.
-- **Content depth** — the block model encourages substantive, extractable sections, which is what answer engines cite.
+- **JSON-LD from the content model.** Each template declares its schema types. Each block contributes its part. Exactly one of each singleton entity per page. `BreadcrumbList` on every page. `Organization` has a stable `@id` that other entities reference.
+- **Semantic HTML.** Exactly one `<h1>` per page. A page with no visible heading (a full-bleed listing) gets a visually hidden (`sr-only`) `<h1>`. Nav labels are not headings. Use `<main>`, `<article>`, `<nav>`.
+- **`llms.txt`** at the root, generated at build.
+- **Per-page metadata, canonical, OpenGraph/Twitter, XML sitemap, RSS** from the `seo` object (§8.1).
+- **The sitemap lists indexable pages only.** Pages with `seo.noIndex: true` (404, thank-you pages, backups) are excluded.
+- **Titles follow one pattern per collection** (for example `Project name, location | Brand`) and stay within 60 characters.
+- **Descriptions are unique per page**, 110–160 characters. No shared boilerplate across collection items.
+- **Performance budget** (§8.2).
 
-### 8.1 The per-page `seo` object — one shape, page root, fully consumed
+### 8.1 The per-page `seo` object
 
-Every page and collection item carries its metadata in a **standard-owned object at the page root, beside `content`** — not inside any block, and not described by the block manifest (the manifest describes the block vocabulary; page-root keys — `template`, `slug`/route, `status`, `nav`, `seo` — are defined here):
+Every page and collection item carries its metadata at the page root, beside `content`:
 
 ```jsonc
 {
@@ -724,19 +726,33 @@ Every page and collection item carries its metadata in a **standard-owned object
   "seo": {
     "title": "…",          // <title> + og:title. Required to publish.
     "description": "…",    // meta description + og:description. Required to publish.
-    "ogImage": { "src": "…", "alt": "…", "width": 1200, "height": 630 },  // optional; falls back to a site default
-    "canonical": "…",      // optional; only when the page is a deliberate duplicate
-    "noIndex": false        // optional; default false
+    "ogImage": { "src": "…", "alt": "…", "width": 1200, "height": 630 },  // optional
+    "canonical": "…",      // optional
+    "noIndex": false        // optional
   },
   "content": { … }
 }
 ```
 
-- **The base layout consumes every key.** A key the layout ignores is the §4.4 "present but unwired" failure in miniature: the editor offers the field, the author fills it, nothing publishes. If a site doesn't support a key, it doesn't declare it.
-- **`title` and `description` are publish blockers; lengths are advice.** The editor warns outside ~50–60 / ~150–160 characters but never refuses — search engines truncate, they don't reject.
-- **Unknown keys survive.** An editor that round-trips a page it doesn't fully model must preserve `seo` keys it doesn't render controls for — dropping them on save is data loss.
-- **`ogImage` is an `image` prop (§3.1) — the same four keys as every other image, dimensions included.** It is not a bare path and not a two-key object. This was ambiguous in 1.8 and three shapes resulted across two sites: one typed it as the full image and validated it, one as a plain string, and the standard showed two keys. An editor writing the two-key form against a site that validates the four-key form has its write **rejected**, which is the worst outcome — the author sees a failure they cannot act on. Social crawlers are also the one consumer that genuinely needs declared dimensions, since they do not lay the page out to discover them.
-- Why this is pinned: `seo` sits beside `content`, so it appears in **no block manifest** — an editor building forms only from the manifest renders it read-only or not at all. Both live sites had editable-nowhere meta titles until the shape was standardised and the editor taught the page-root contract.
+- **The base layout consumes every key.** A site that does not support a key does not declare it.
+- **Declare the `seo` type once** (for example `src/lib/seo.ts`). Every route imports it and passes every key to the layout. No route re-spells the shape inline.
+- **`noIndex` acts in both places:** the page's robots meta and the sitemap.
+- **`title` and `description` block publish. Length limits only warn.**
+- **Editors preserve unknown `seo` keys** on save.
+- **`ogImage` is a full `image` prop**, dimensions included.
+- **`seo.description` also feeds the page's structured data** where the entity has a description.
+
+### 8.2 Performance budget and measurement
+
+Budget, enforced in CI: Lighthouse mobile ≥ 95, LCP < 1.5 s, TBT < 150 ms, CLS < 0.1.
+
+Measure like this:
+
+- **Compare against the base branch on the same machine,** in the same session. A single absolute score is not evidence.
+- **Run Lighthouse as a library through Playwright with `channel: 'msedge'`** (or Chrome). Playwright's bundled Chromium has no H.264 and cannot play MP4 or HLS video.
+- **Read observed LCP, not only the simulated value.** Mobile LCP in Lighthouse is a Lantern estimate.
+- **GTmetrix does not throttle the CPU.** Use it for page weight and waterfall, not for TBT on phones.
+- **Report data cost for video pages:** bytes transferred over a fixed watch time.
 
 ---
 
@@ -744,40 +760,46 @@ Every page and collection item carries its metadata in a **standard-owned object
 
 ```
 /repo
-  site.json             # the site describes its own layout + standardVersion; §4.6
-  /blocks               # framework components — the block vocabulary (code)
-  block-manifest.json   # generated: every block's slots/props/variants
-  /templates            # template definitions (data; authored in the editor)
+  site.json                  # the site's own layout + standardVersion (§4.6)
+  site-checks.config.json    # declared exceptions for traction-site check (§11.0)
+  /blocks                    # React components — the block vocabulary
+  block-manifest.json        # generated from the block schemas
+  /templates                 # template definitions (data)
   /content
-    globals.json        # header/footer/site details + nav/footer skeleton + analytics; §3.5, §3.8, §7.2
-    redirects.json      # old path → new path (301/308); emitted as host redirects; §3.7
-    /pages/*.json        # pages: template choice + slot content + opt-in `nav` entry (data)
-    /collections/<name>/*.json   # repeated items: case studies, posts, team; §3.6
-  /renderer             # optional shared package: (template + content) → HTML; §5
-  /styles
-    tokens.css          # design tokens (the only place style is defined)
-  /scripts              # tiny progressive-enhancement islands (optional)
-  <generator config> + build
+    globals.json             # site details, brand, nav skeleton, analytics, enquiry copy (§3.8)
+    redirects.json           # { from, to, status } (§3.7)
+    /pages/*.json            # template + slot content (+ nav, seo, hiddenSlots)
+    /collections/<name>/*.json
+  /videos/*.mp4              # video masters, Git LFS (§3.4.2)
+  /src/data/video-manifest.json   # generated by the video Action — never hand-edit
+  /public/media/video-posters/    # generated first-frame posters
+  /renderer                  # renderPage + block registry
+  /styles/tokens.css         # design tokens — the only place style is defined
+  /scripts                   # generators and checks (manifest, check-videos, sync-videos)
+  /.github/workflows/sync-videos.yml
+  .gitattributes             # videos/*.mp4 filter=lfs diff=lfs merge=lfs -text
+  astro.config.mjs + build
 ```
 
-`build` turns this into the live site. The editor appears nowhere in it.
+The editor appears nowhere in it.
 
 ---
 
 ## 10. Extending the system
 
-- **Add a block:** create the framework component + its typed props + a manifest entry. It appears in the editor automatically. Build it to match the design using tokens; mark whether it's an island and what schema it contributes.
-- **Add a template:** compose existing blocks in the editor → saved to `/templates`. No code needed.
-- **Add a page:** pick a template, fill its slots in the editor.
-- **Rebrand:** change tokens / a component once → every page updates.
+- **Add a block:** a React component + its Zod schema. Regenerate the manifest. It appears in the editor.
+- **Add a template:** compose existing blocks in the editor. It saves to `/templates`.
+- **Add a page:** pick a template and fill its slots.
+- **Add a video:** commit the master to `videos/`, push, wait for the Action's commit, then point content at `videos/<name>.mp4` (MEDIA-STRATEGY §4).
+- **Rebrand:** change tokens or one component.
 
 ---
 
-## 11. Conventions & validation
+## 11. Conventions and validation
 
 ### 11.0 Install the checks; do not re-derive them
 
-**`@traction/site-checks` is this document's gate items as code, and [RULES.md](https://github.com/traction-marketing-nz/traction-website-standard-checks/blob/main/RULES.md) is the source of truth for what they are and why.** This document states principles and architecture; it does not keep a second copy of the rules. A site installs it and runs it in the build:
+`@traction/site-checks` runs this document's gate items. [RULES.md](./RULES.md) is the source of truth for them.
 
 ```jsonc
 // package.json
@@ -785,256 +807,267 @@ Every page and collection item carries its metadata in a **standard-owned object
 "scripts": { "build": "astro build && traction-site check" }
 ```
 
-**Pin a tag, and take the tag from the package's releases** — not from this
-example. A version written here is a version that goes stale: this line said
-`v0.1.3` for five releases, which is the same rot §4.6's example had when it sat
-at `1.8` for two revisions. A document cannot hold a number that changes without
-it. (A site on pnpm uses `pnpm add -D` — `npm install` silently adds nothing.)
-
-It exits non-zero, so it stops a deploy. Everything it reads is the **built output** — the pages a visitor receives, not the source that produced them.
-
-> ⚠️ **This section exists because prose does not run.** Four sites read this document and each wrote its own checkers: the same-named built-output checker was 320 lines on one site and 416 on another, and two of the four checked redirects not at all. So a redirect fix reached exactly one site, and the site next to it had the identical defect, live, for weeks. **A rule in this document binds nothing until something refuses to ship.**
-
-**Per-site exceptions are declared, with a reason, in `site-checks.config.json`.** Sites genuinely differ — one cannot carry a trailing-slash redirect twin because a route directory occupies that URL — and a shared checker that pretends otherwise breaks working sites, which is how a shared checker gets deleted. The loader refuses an exception with no reason, and prints every exception on every run, so a waiver stays visible instead of becoming the silence it was meant to avoid.
-
-**Errors block; warnings do not.** An error is something a visitor receives. A warning is debt — an image with no dimensions, a hotlinked asset. The first run against an existing site produced 185 findings, every one of them debt, and a gate that refuses today's change over last year's debt is one people learn to route around. A site cleans a rule up and then **promotes** it, after which it blocks.
-
-**What the emitter and the checker must never do is keep separate copies of one rule.** On one site the redirect emitter and its check both consulted an exception list — and deleting the exception made the emitter emit a shadowing route *and* made the check stop expecting one. They agreed with each other while every page under that path would have gone dark. Where two halves can agree and still be wrong, the check has to ask the **built output**, which is the only thing that settles it.
+- **Pin a release tag** from the package's releases. On pnpm use `pnpm add -D`.
+- **It exits non-zero and stops the deploy.** It reads the built output.
+- **Declare per-site exceptions in `site-checks.config.json`, each with a reason.** The loader refuses an exception without one and prints every exception on every run.
+- **Errors block; warnings do not.** Clean a warning rule up, then promote it so it blocks.
+- **An emitter and its checker never share one copy of a rule.** The checker reads the built output.
+- **Site-specific gates chain into `build` too** (for example `check-videos`, `test-markdown`, `test-seo`).
 
 ### 11.1 Everything else
 
-- **Validation:** generate **Zod** schemas from the manifest; the editor and the build both validate. Invalid content (wrong type, value outside an enum, missing required prop) is rejected at edit time.
-- **No inline styles in content** — ever. Style lives in tokens + components.
-- **Accessibility:** every input has a `<label>`; visible focus states; semantic landmarks; ARIA labels on icon-only controls; mobile-first responsive.
-- **Localisation as configuration** — language/spelling, currency, date format set per site, not hard-coded.
-- **Small, focused components**; pure functions in a `lib`; types colocated or in `types`.
-- **Document decisions** (ADRs) when making architectural choices.
+- **Validation:** Zod schemas validate content in the editor and in the build.
+- **No inline styles in content.**
+- **Accessibility:**
+  - every input has a `<label>`; visible focus states; semantic landmarks; ARIA labels on icon-only controls; mobile-first layout.
+  - **Every auto-advancing carousel has a pause/play control.** It flips its icon and accessible name, and works with Tab, Enter and Space.
+  - **Content sliders advance no faster than every 7 s.**
+  - Ambient video honours `prefers-reduced-motion` (MEDIA-STRATEGY §4.6).
+- **Localisation is configuration** — language, spelling, currency, date format per site.
+- **Small components; pure functions in `lib`.**
+- **Record architectural decisions** in the site's README or an ADR.
 
 ---
 
 ## 12. New-site quick start
 
-*This is the build **sequence**. For a net-new (greenfield) site, run it alongside the design → handoff → gate process in §14, which governs how the design becomes tokens + blocks + reference renders **before** step 3 here. For a migration, the fidelity gate in §13 governs sign-off.*
+For a migration, run this with the §13 gate. For a new design, run it with §14.
 
-1. **Scaffold** the generator project with the framework integration; add the host adapter and an independent database. **Install `@traction/site-checks` and wire it into `build` now** (§11.0), not at the end — it is what turns the rest of this list from advice into a gate, and adding it last means discovering at launch what it would have told you in week one.
-2. **Establish tokens** — extract/define the design tokens (colours, type, spacing) up front.
-3. **Build the core blocks** for the first template (`Hero`, `RichText`, `CTA`, `FAQ`), then the rest.
-4. **Define templates** for the site's page types; map every page to one.
-5. **Author content** as `template + slot data`.
-6. **Wire dynamic features** — the enquiry pipeline to the reference implementation in **§7.1**, and the tag manager per **§7.2**. Prove the enquiry loop with a real submission (§7.1.1) rather than a green build; create the private, in-region enquiry store at this point, since its access mode and region are permanent.
-7. **Generate SEO/AEO/GEO outputs** (schema, sitemap, `llms.txt`) from the model.
-8. **Wire the error page and redirects** (§3.7.2, §3.7.3) — the 404 content page plus the host error route, and confirm `redirects.json` is actually read by the build. `traction-site check` enforces the rest; see its RULES.md. All of it is invisible when missing.
-9. **Write `site.json`** (§4.6) — the descriptor naming every path and collection, and the `standardVersion` built to.
-10. **Prove the data-driven render tree-shakes** and the **editor↔git↔preview** loop on one page before scaling — then **pass the editor-readiness gate (§4.4)** before calling the site done. Conforming the design is necessary but **not sufficient**: pages must be content-data, not code.
+1. **Scaffold** the Astro project with the Vercel adapter and an independent database. **Install `@traction/site-checks` and wire it into `build` now** (§11.0).
+2. **Establish tokens.**
+3. **Build the core blocks** for the first template, then the rest.
+4. **Define templates.** Map every page to one.
+5. **Author content** as template + slot data.
+6. **Wire dynamic features:** the enquiry pipeline (§7.1 or §7.1.2) with `security.allowedDomains`, and the tag manager (§7.2). Create the private, in-region store now.
+7. **Set up video** if the site has any (MEDIA-STRATEGY §4): LFS, the Mux environment, the GitHub secrets, the Action and the build gate.
+8. **Generate SEO/AEO/GEO outputs** from the model.
+9. **Wire the 404 page and redirects** (§3.7, §3.7.3).
+10. **Write `site.json`** (§4.6).
+11. **Prove the render splits per page and the editor ↔ git ↔ preview loop** on one page. Then pass the editor-readiness gate (§4.4).
 
 ---
 
-## 13. Site duplication — the two-phase fidelity gate
+## 13. Migration — the two-phase fidelity gate
 
-*Two ways to build a site under this standard: **migrate** an existing one (this section) or design a **brand-new** one (§14 — greenfield). Pick the matching gate.*
+Use this when a new site must match an existing live site. Fidelity is a per-template gate.
 
-Used when **duplicating an existing site** (migrating from an old CMS/theme to this architecture) where the new site must match the source exactly. Fidelity is a **per-template gate, not a final step:** as each template is built it must pass *before it is considered done.*
+**A template is done only when it passes both phases at every breakpoint, and the editor-readiness gate (§4.4).**
 
-> **Principle: a template isn't "done" until it passes BOTH the visual gate and the structural audit at every breakpoint.**
+- **Phase 1 — visual diff (`compare.mjs`):** per-section pixel-diff < 10% at every breakpoint.
+- **Phase 2 — structural audit (`audit.mjs`):** a manifest extracted from the source, asserted against the rebuild.
 
-A single pixel-diff percentage is **necessary but not sufficient**. It cannot tell a real defect from noise: a low % routinely *hides* a missing section, a swapped asset, or a wrong element count (the matching content drowns out the small/structural difference), while photographic and carousel sections never pixel-match even when visually identical. So the gate has two phases — run them in order:
+`compare.mjs` and `audit.mjs` are reference names. Any Playwright + pixelmatch harness and DOM-manifest extractor that does the same satisfies the gate.
 
-- **Phase 1 — Visual diff (`compare.mjs`):** per-section pixel-diff < 10% at every breakpoint. Catches typography, colour, spacing, and layout drift.
-- **Phase 2 — Structural manifest audit (`audit.mjs`):** extract a manifest from the source and assert parity against the rebuild. Catches what pixels and the eye miss — missing sections, swapped/absent assets, wrong counts, grid-vs-carousel.
+- **Extract the source's structure first, build to it, then diff.** Do not build from a screenshot.
+- **Fidelity is not conformance.** A matching site with hand-coded pages fails.
+- **Prove a supposedly inert change by diffing the built CSS/HTML** against the base branch. Tailwind v4 scans `.mjs` and `.astro` content, so a class name inside a comment emits CSS.
 
-> `compare.mjs` / `audit.mjs` are **reference tooling** — the names are illustrative of a Playwright + pixelmatch harness and a DOM-manifest extractor. Any equivalent implementation that produces section-isolated visual diffs and a structural parity report satisfies the gate.
-
-> **Mindset: extract the source's structure into a manifest FIRST, build to the manifest, then diff.** Don't build from a screenshot and guess — you'll keep re-querying the source. Pull ground truth up front.
-
-> ⚠️ **Fidelity ≠ conformance.** A migrated site that looks identical but whose pages are hand-coded has **failed** (§4.4). Run the editor-readiness gate per template alongside this one.
-
-> ⚠️ **Prose can be a build input.** When a change is supposed to be visually inert (a refactor, a manifest regeneration), prove it by diffing the **built output**, not by reasoning about which files you touched. Utility-CSS frameworks that scan source files by content — Tailwind v4 scans `.mjs` and `.astro` — will happily emit a rule for a class name that appears **inside a comment**. Writing the word *invisible* in an explanatory comment added `.invisible{visibility:hidden}` to the stylesheet and changed its content hash. The correct evidence is a byte-for-byte comparison of the built CSS/HTML against the baseline branch; the correct fix is usually to reword the comment.
-
-### 13.0 Migration protocol — phases and session resumption
-
-A migration runs across many sessions. Without a written protocol each session re-discovers the source instead of building, and Phase 0 questions get asked twice.
+### 13.0 Migration protocol
 
 | # | Phase | Enters when | Leaves when |
 |---|---|---|---|
-| 0 | **Intake** | The job starts | The six questions below are answered and recorded |
+| 0 | **Intake** | The job starts | The six questions are answered and recorded |
 | 1 | **Source audit** (§13.1) | Intake done | `source-audit/<template>.json` exists per template |
 | 2 | **Tokens** | Audit done | `tokens.css` extracted and approved |
-| 3 | **Blocks** | Tokens done | The template's blocks exist, schema-first (§4.2.1) |
+| 3 | **Blocks** | Tokens done | The template's blocks exist, schema-first |
 | 4 | **Templates** | Blocks done | `templates/*.json` with slot order verified (§13.2) |
 | 5 | **Build + content** | Templates done | Pages are content-data; both gates pass per template |
-| 6 | **Launch gate** | All templates signed off | Every §15 checklist item done |
+| 6 | **Launch gate** | All templates signed off | Every §15 item done |
 
-**State file — `migration-state.json`**, written at Phase 0 and updated throughout: the `standardVersion` being built to, the source URL, the intake answers, and which phase each template has reached. **Any session reads this first** and resumes from it. **Never re-ask a Phase 0 question that is already answered there.**
+**`migration-state.json`** holds the `standardVersion`, the source URL, the intake answers and each template's phase. Every session reads it first. Never re-ask an answered Phase 0 question.
 
 #### 13.0.1 Phase 0 — the six intake questions
 
-Asked once, before any code:
+1. **Source URL** — the exact live site and environment.
+2. **Scope** — templates in and explicitly out.
+3. **Intentional deviations** from the source.
+4. **Known gaps** on the source that need not be reproduced.
+5. **Deployment target** — host, domain, and whether it replaces a live site.
+6. **Mobile breakpoint** — default 375 px.
 
-1. **Source URL** — the exact live site being replicated, including which environment.
-2. **Scope** — which pages/templates are in scope, and which are explicitly out.
-3. **Intentional deviations** — what should deliberately *differ* from the source (free text; this is what stops the fidelity gate flagging a wanted change as a defect).
-4. **Known gaps** — what is already broken or missing on the source that we are not obliged to reproduce.
-5. **Deployment target** — host, domain, and whether this replaces a live site (which decides the §15 cutover items).
-6. **Mobile breakpoint** — the width to gate at, because 375px is the default and divergence hides there.
+### 13.1 Phase 1 — source audit
 
-### 13.1 Phase 1 — source audit (per template, before any code)
+Produce `source-audit/<template>.json` per template before building it:
 
-Produce `source-audit/<template>.json` for every template **before building it**. It captures:
-
-- **Section inventory**, numbered top-to-bottom — **this IS the slot order** (§13.2).
-- **Interactive widget classification** — carousel vs grid vs tabs vs accordion, detected rather than assumed, because they pixel-diff identically while behaving differently.
-- **Heading style matrix**, measured via `getComputedStyle` rather than eyeballed.
-- **Mobile viewport notes** at the agreed breakpoint.
+- **Section inventory**, numbered top to bottom. This is the slot order.
+- **Widget type** — carousel, grid, tabs or accordion — detected, not assumed. Count the slides of a carousel after it finishes loading.
+- **Heading style matrix** from `getComputedStyle`.
+- **Mobile notes** at the agreed breakpoint.
 - **Global elements** — logo `href`, nav targets, footer links, social hrefs.
+- **Source media** — the original files for every image and video (ask the client for video masters at this point, MEDIA-STRATEGY §4.2).
 
 #### 13.1.1 Extract ground truth — never eyeball
-Pull the source's **computed values** and match them exactly:
-- colours, `font-size` / `font-weight` / `line-height` / `letter-spacing` per element;
-- element **geometry** (bounding boxes — position, width, height) to match layout and text wrapping;
-- section padding, container max-widths, column gaps, and whether sections are **full-bleed or contained** (a 1280 vs 1220 container scales a `background-size:100%` image differently and offsets everything inside).
-Matching measured values is faster and exact. Most fidelity bugs are a single cause: a too-dark colour, a wrong font-weight, a wrong container width, or a line-height that changes where text wraps.
 
-### 13.2 Template slot order rule
+Pull the source's computed values and match them exactly:
 
-The `slots` array order in `template.json` is the **only** control over render order. Page JSON key order is irrelevant — it is a map, not a sequence. Verify slot order against the source audit's section inventory **before building**, not after someone notices the page is in the wrong order.
+- colour, `font-size`, `font-weight`, `line-height`, `letter-spacing` per element
+- element geometry (bounding boxes)
+- section padding, container max-width, column gaps, full-bleed or contained
 
-### 13.3 Phase 1 — the visual harness (`compare.mjs`)
-An automated visual-regression tool (e.g. Playwright + pixelmatch) that, for a fixed set of breakpoints (mobile / tablet / desktop / wide):
-- renders **both** the source and the rebuilt page at the *real* viewport (true mobile rendering, not a locked desktop width), loading the source directly (no iframe — `X-Frame-Options` is irrelevant);
-- **isolates each section**: aligns on the *section's top edge* (not a heading — which may sit low in the section) and **clips the capture to the section's own height**. This is critical — a fixed-viewport capture of a 400px section is half neighbour-bleed and inflates the number; clipping to the section measures *that section*;
-- produces a **pixel-diff image** (mismatches highlighted) and a **% difference** per section per breakpoint.
+Before marking a section done, run `getComputedStyle` on the same element on source and rebuild, and compare the values.
 
-The per-section loop:
-```
-build section → harness aligns source vs rebuild on the section top, clips to section height
-   → review the DIFF IMAGE, not just the %: concentrated red = a real structured defect
-     (offset, overlap, swap); scattered red = anti-aliasing/compression noise
-   → extract the source's exact computed values → fix tokens/components → rebuild → re-run
-   → repeat until < 10%
-```
+### 13.2 Template slot order
 
-### 13.4 Known visual-diff floors (route these to Phase 2)
-Some sections **cannot** reliably reach the threshold by pixel-diff — not a fidelity gap, an inherent property of the metric. Recognise them, get them as close as the structure allows, then **rely on the manifest audit + a one-time visual check** rather than chasing the number:
-- **Photographic backgrounds** — the source's image is often re-encoded/resized by its CDN, so the bytes differ from the asset you load; high-frequency texture + overlaid text anti-aliasing leaves a ~10–15% floor even when the crop, scale and position match exactly. Match width/scale/position precisely, then accept the floor.
-- **Auto-advancing carousels / sliders** — the source lands on an arbitrary slide at capture time, so the diff is non-deterministic (and pausing via the slider's API often lands mid-transition or on the wrong slide). Freeze/pause best-effort, **verify the design once by eye**, and let Phase 2 assert the slide count and content.
-- **Lottie / video** — hide on both sides for the static diff; verify motion separately.
+The `slots` array order is the only control over render order. Page JSON key order is irrelevant. Verify slot order against the section inventory before building.
 
-### 13.5 Phase 2 — the structural manifest audit (`audit.mjs`)
-For each section (located on both sites by a shared text anchor — resolved to the **most specific** element so `closest()` returns the section, not a page-level wrapper), extract a manifest and assert parity:
+### 13.3 The visual harness (`compare.mjs`)
+
+For each breakpoint (mobile, tablet, desktop, wide):
+
+- Render source and rebuild at the real viewport. Load the source directly, not in an iframe.
+- **Isolate each section:** align on the section's top edge and clip the capture to the section's height.
+- Produce a diff image and a % per section.
+
+Loop: build the section → compare → read the diff image (concentrated red is a defect, scattered red is noise) → extract the source's computed values → fix tokens or the component → repeat until < 10%.
+
+### 13.4 Known visual-diff floors
+
+These cannot reliably reach the threshold. Match them as closely as the structure allows, check them once by eye, and rely on Phase 2:
+
+- **Photographic backgrounds** (about 10–15% floor).
+- **Auto-advancing carousels** — the captured slide is arbitrary.
+- **Lottie and video** — hide them on both sides for the static diff. Verify motion separately.
+
+### 13.5 Phase 2 — the structural audit (`audit.mjs`)
+
+Locate each section on both sites by a shared text anchor (the most specific element). Assert:
 
 | Check | Catches |
 |---|---|
-| **Section inventory** (count + order + headings) | A whole section missing from the rebuild |
-| **Asset parity** (every source `<img>`/`data-lazyload`/background-image basename is referenced) | Swapped or missing logos, globes, separators, avatars, thumbnails |
-| **Background colour** (per section, transparent-normalised) | A panel/band built on the wrong surface colour |
-| **Component type** (static / carousel / tabs) | A carousel rebuilt as a static grid (or vice-versa) |
-| **Slide / item count** | "3 testimonials vs 5", "5 logos vs 8" |
-| **Element counts** (imgs, links) — *informational* | Content gaps (noisy for carousels: clones inflate it) |
+| **Section inventory** (count, order, headings) | A missing section |
+| **Asset parity** (every source image basename is referenced) | Swapped or missing assets |
+| **Background colour** per section | A wrong surface colour |
+| **Component type** (static, carousel, tabs) | A carousel built as a grid, or the reverse |
+| **Slide / item count** | Wrong counts |
+| **Element counts** (informational) | Content gaps |
 
-**Accepted deviations.** Where the rebuild *intentionally* improves on the source — e.g. a CSS chevron instead of an `arrow-left.png`, or a CSS ring instead of a decorative shape SVG — record it in an allowlist so the audit surfaces it as a **note**, not a failure. Everything not on the allowlist is a hard issue.
-
-The audit is deterministic, needs no human to read screenshots, and is the **real gate for the Phase-1 floors** (photographic + carousel sections): it confirms the right assets, counts, and component types are present even when pixels can't.
+Record intentional improvements in an allowlist. They report as notes. Everything else is a failure.
 
 ### 13.6 Acceptance criteria
-- **Every breakpoint passes**, not just desktop — mobile/tablet are where divergence hides. Explicitly required: a screenshot pass at 375px for every template, covering the hero, the first section below it, and the navigation collapse.
-- **Phase 1:** each section's static, section-isolated diff is **< 10%**, *except* documented floors (§13.4), which must be as close as structure allows + visually signed off.
-- **Phase 2:** `audit.mjs` reports **no structural issues** (notes for accepted deviations are fine).
-- **Template slot order verified** against the source audit section inventory (§13.1, §13.2) before build starts, not after a mismatch is noticed.
-- **Global elements verified:** logo `href` navigates home, all nav links resolve, footer links and social icon hrefs are correct (checked against `globals.json` and confirmed in browser).
-- Keep the side-by-side + diff images and the audit report as a **record per template**.
-- **Editor-ready (§4.4):** the template's page(s) are content-data (not code), and the block manifest covers its blocks. Fidelity alone does not sign off a template.
-- A template is signed off only when **fidelity (both phases) *and* editor-readiness (§4.4)** pass at all breakpoints; these per-template sign-offs feed the launch checklist (§15).
+
+- **Every breakpoint passes**, including a 375 px pass of the hero, the first section below it and the nav collapse.
+- **Phase 1:** each section < 10%, except documented floors, which are visually signed off.
+- **Phase 2:** no structural issues.
+- **Slot order verified** before build.
+- **Global elements verified** against `globals.json` and in the browser.
+- **Side-by-side, diff images and the audit report kept** per template.
+- **Editor-ready (§4.4).**
 
 ---
 
-## 14. Net-new sites — the greenfield design process
+## 14. New design — the greenfield process
 
-Used when building a **brand-new site with no existing version to replicate**, rather than migrating one (§13). The architecture, build pipeline and gate machinery are identical — but the **reference flips**, and that cascades:
+Use this when there is no existing site. The pipeline and gates are the same. The reference is an approved design.
 
 | | Migration (§13) | Greenfield (§14) |
 |---|---|---|
-| Source of truth | the live site | an **approved design artifact** |
-| Visual gate | exact — < 10% pixel-diff | **intent — ~15–20%** (the mock guides, it isn't gospel) |
-| Quality gates | inherited from the old site | **must be added** (a11y, responsive, perf, SEO) |
+| Source of truth | the live site | an approved design artifact |
+| Visual gate | < 10% pixel-diff | about 15–20% (intent) |
+| Quality gates | inherited | added explicitly |
 
-> **Don't pixel-chase an AI-generated mock to 100%** — it wastes effort and bakes in the mock's flaws (poor contrast, desktop-only thinking). Loosen the visual gate; tighten the quality gates.
+Do not pixel-chase an AI-generated mock to 100%.
 
 ### 14.1 The design funnel
-1. **Diverge** — generate **several distinct directions** with claude.ai/design (or the `frontend-design` plugin in-IDE). Get **mobile *and* desktop** for key screens; AI mocks default to desktop, and responsive logic is where greenfield quality lives.
-2. **Decide** — pick one direction with the stakeholder and lock it.
-3. **Hand off to the coding system (§14.2)** — the step that makes or breaks the build.
-4. **Build** — the same blocks → templates → pages pipeline, token-driven, static output.
-5. **Gate** — the greenfield gate (§14.3).
 
-### 14.2 ⭐ The handoff: design artifact → coding system
-**This is the crux of the whole process. The deliverable of "design" is a *system*, not a set of screens.** A mock dropped straight into code as pixels-to-copy yields a beautiful home page and inconsistent inner pages. The mock is **direction**; the *system* is what crosses the boundary into the repo.
+1. **Diverge** — several directions with claude.ai/design (or the `frontend-design` plugin), mobile and desktop for key screens.
+2. **Decide** — lock one direction with the stakeholder.
+3. **Hand off** (§14.2).
+4. **Build** — blocks → templates → pages, token-driven.
+5. **Gate** (§14.3).
 
-**Nothing enters the build until these three artifacts exist** — they are the contract between design and code:
+### 14.2 The handoff — design artifact to coding system
 
-1. **Design tokens → `tokens.css`.** Extract palette, type scale, spacing, radii, shadow and motion from the chosen mock into tokens. *Every* block references tokens, never raw values — this is the single contract that keeps all pages consistent, makes the site themeable, and lets the editor change content without touching design.
-2. **Block + template decomposition.** Map the design's recurring sections to **reusable blocks**, and define the **template set deliberately, up front** (a recruitment site, say: home, job-listing, job-detail, apply, about, contact). Greenfield's edge over migration is exactly this: you *design to a clean block system* instead of reverse-engineering someone's markup. Do it on purpose.
-3. **Reference renders.** The chosen mock as **rendered HTML, per template, per breakpoint** (claude.ai/design emits real HTML, so serve it). These become the new "source of truth" — what `compare.mjs` diffs the build against, replacing the live URL.
+Nothing enters the build until these three exist:
 
-> **Handoff rule of thumb:** if you can't point to the tokens file, the block list, and the per-breakpoint reference renders, design isn't finished and coding shouldn't start. The mock is an *input* to the handoff, not the output of it.
+1. **Design tokens → `tokens.css`** — palette, type scale, spacing, radii, shadow, motion.
+2. **Block and template decomposition** — reusable blocks and a deliberate template set.
+3. **Reference renders** — the chosen mock as rendered HTML, per template, per breakpoint. `compare.mjs` diffs against these.
 
 ### 14.3 The greenfield gate
-Same two phases as §13, re-pointed at the reference renders:
-- **Visual (`compare.mjs`, reference = rendered mock):** intent match at **~15–20%** — confirm the build *realises* the design, not that it photocopies an imperfect mock.
-- **Quality (what a migration inherits for free, here made explicit):**
-  - **Token conformance** — no off-token colours/spacing (the audit's "asset parity" becomes "token parity").
-  - **Accessibility** — contrast ratios, semantic structure, keyboard paths, focus order.
-  - **Responsive correctness** — every breakpoint designed and verified (no fixed-px traps).
-  - **Performance budget** — mobile + desktop.
-  - **SEO / structured data** — template-declared schema, one entity per page.
+
+- **Visual** against the reference renders: about 15–20%.
+- **Quality:**
+  - token conformance — no off-token colours or spacing
+  - accessibility — contrast, structure, keyboard paths, focus order
+  - responsive correctness at every breakpoint
+  - performance budget (§8.2), mobile and desktop
+  - SEO and structured data — one entity per page
 
 ### 14.4 Acceptance criteria
-- Tokens, block list, and per-breakpoint reference renders exist and are approved **before** build (§14.2).
-- Visual diff within the greenfield threshold at **every breakpoint**.
-- All quality gates pass (a11y, responsive, performance, SEO, token conformance).
-- **Editor-readiness gate (§4.4) passes** — pages are content-data, the block manifest is generated, `site.json` exists, the editor↔git↔preview loop is proven. A greenfield site that renders the mock as hand-coded pages is **not** done.
-- Records kept per template, same as §13.
+
+- Tokens, block list and reference renders approved before build.
+- Visual diff within threshold at every breakpoint.
+- All quality gates pass.
+- Editor-readiness (§4.4) passes.
+- Records kept per template.
 
 ---
 
-## 15. Launch / migration checklist
+## 15. Launch checklist
 
-*(Applies to replacement sites. A net-new site skips the migration-only items — 301 maps, parallel data capture, DNS rollback — and is gated by §14 instead.)*
+A new-design site skips the migration-only items: the 301 map, parallel data capture and DNS rollback.
 
-- [ ] Every template passed **both** phases of the fidelity gate (§13) at all breakpoints including 375px mobile: Phase 1 visual diff < 10% per section (bar documented floors), Phase 2 structural manifest audit clean.
-- [ ] **Template slot order** verified against source audit section inventory for every template (§13.1, §13.2).
-- [ ] **Global elements verified:** logo `href` navigates home, all nav links resolve, footer links and social icon hrefs correct in `globals.json` and confirmed live in browser.
-- [ ] **Editor-readiness gate (§4.4) passes** — `block-manifest.json` generated, `site.json` present and accurate, every page is content-data (no content/layout in code), editor↔git↔preview loop proven, editor readiness check green.
-- [ ] `compare.mjs` (visual) and `audit.mjs` (structural) records kept per template.
-- [ ] Performance budget passes (mobile + desktop).
-- [ ] Structured data validates; one of each entity per page; no duplicates.
-- [ ] Every old URL has a 301 map **built from a full crawl of the old site** — a crawler that reads the sitemap where there is one and follows links where there isn't, producing the inventory and the redirect plan. Not from memory, and not from the old sitemap alone: a sitemap lists what the old CMS chose to declare, which is rarely everything that has inbound links. Sitemap submitted; canonical tags correct.
-- [ ] **Rich text proven (§3.1.1)** — the site's Markdown module passes its pinned checks, and one page with bold, a list and a link renders correctly on a deployment.
-- [ ] **Per-page SEO consumed (§8.1)** — a page's `seo.title`/`description` appear in the built `<head>`; no declared key is ignored by the layout.
-- [ ] **Redirects proven on a deployment (§3.7.2)** — a real old path requested, real 301 to the right place. Not "it's in the config".
-- [ ] **`traction-site check` passes (§11.0)** — every redirect rule is checked by it, in both slash forms, with its destination confirmed to exist. A pass on one form and a spot check on one rule is how twelve dead redirects shipped.
-- [ ] **`traction-site check` is in the build script and exits 0 (§11.0)** — not run by hand once. If it is not in `build`, nothing stops the next deploy.
-- [ ] **Branded 404 served (§3.7.3)** — request a path that cannot exist; confirm the site's own page, status 404, not the platform's card.
-- [ ] **Enquiry pipeline proven end-to-end (§7.1.1)** — a real submission redirected to success, the record read back out of the store and then deleted, **one live email received** (not merely accepted by the API), and the failure paths exercised.
-- [ ] **Enquiry store is private, in-region, and dedicated to this site** — not shared with another site's records (§7.1 rule 7).
-- [ ] **Tag manager wired (§7.2)** — `analytics.gtmContainerId` in globals, both snippets rendered from the shared layout, and coverage proven by **counting**: the container ID appears in every HTML file the build emits. Consent decision recorded either way.
-- [ ] **No secret is in `globals.json`, and no secret appears in the built output** (client *or* server) — `grep` the build for each secret's value (§3.8.1).
-- [ ] Forms/data capture run in parallel with the old system during cutover (no data loss).
+**Fidelity and editing**
+
+- [ ] Every template passed both fidelity phases (§13) or the greenfield gate (§14) at every breakpoint, including 375 px.
+- [ ] Slot order verified against the source inventory (§13.2).
+- [ ] Global elements verified: logo `href`, nav links, footer links, social hrefs.
+- [ ] Editor-readiness gate passes (§4.4).
+- [ ] `compare.mjs` and `audit.mjs` records kept per template.
+
+**Build gates**
+
+- [ ] `traction-site check` is in the `build` script and exits 0 (§11.0).
+- [ ] Rich text proven (§3.1.1): `test-markdown` passes; bold, a list and a link render on a deployment.
+- [ ] Per-page SEO consumed (§8.1): a page's `seo.title` and `description` appear in the built `<head>`.
+- [ ] No secret in `globals.json` or in the built output (§3.8.1).
+
+**On a deployment**
+
+- [ ] Redirects proven (§3.7.2): a real old path returns a 301 to the right place, in both slash forms.
+- [ ] Every old URL has a 301, built from a full crawl of the old site (sitemap plus link-following).
+- [ ] Branded 404 served with status 404, and absent from the sitemap (§3.7.3).
+- [ ] Enquiry pipeline proven (§7.1.1), or the hosted form proven (§7.1.2).
+- [ ] Enquiry store is private, in-region and dedicated to this site.
+- [ ] `security.allowedDomains` lists the production host, its `www.` variant and `**.vercel.app` (§7.1 rule 15).
+- [ ] Tag manager wired (§7.2): the container ID is in every built HTML file; no duplicate GA4 property; consent decision recorded.
+- [ ] Favicon set in `brand.favicon` and served (§3.8).
+- [ ] Structured data validates; one of each singleton entity per page.
+- [ ] Sitemap submitted; canonicals correct; noindexed pages absent from the sitemap.
+- [ ] Performance budget measured against the base branch (§8.2), mobile and desktop.
+
+**Video** (when the site has video — MEDIA-STRATEGY §4)
+
+- [ ] Masters committed to `videos/` under LFS; Vercel Git LFS off.
+- [ ] The sync Action has run green on `main`/`master`; every master is in the manifest with a poster.
+- [ ] `check-videos` is in the `build` script.
+- [ ] Hero videos play on a real iPhone, on first load, on every slide.
+- [ ] No `/media/*.mp4` file is still referenced by content.
+
+**Cutover** (replacement sites)
+
+- [ ] Forms run in parallel with the old system during cutover.
 - [ ] DNS points at the host in single-CDN mode; SSL valid.
-- [ ] Rollback path confirmed (DNS flip) until the old site is decommissioned.
+- [ ] Rollback path (DNS flip) confirmed until the old site is decommissioned.
 
 ---
 
-## 16. Why this architecture (rationale)
-
-Traditional CMS/theme stacks store content as rendered markup, mix content with style, ship large undifferentiated JS/CSS to every page, and couple the site tightly to the editing tool and host. That produces slow pages, fragile edits, duplicated/ broken structured data, and painful maintenance.
-
-This standard inverts all of that: **content is structured data, design is versioned code, output is minimal static HTML, structured data is automatic, and the site is decoupled from both the editor and the host.** The result is fast, AI-editable, answer-engine-ready websites that are cheap to run and easy to evolve — and a single way of building that every future site inherits.
-
----
-
-## 17. Changelog
+## 16. Changelog
 
 The standard is versioned so each site can record which version it was built to (§4.6).
+
+- **2.0** (2026-10-09) — **Rules only, plus the Smith Architects findings.**
+  - The document now states outcomes only. Incident notes, rationale and the old §16 (rationale) are removed. Section numbers are unchanged, so every reference from RULES.md, the checks and START-A-NEW-SITE.md still resolves. This changelog is now §16.
+  - **Video** (§3.1 `video` prop, §3.4.2, §4.4, §4.5 item 7, §6, §9, §15): masters in `videos/` under Git LFS, published to Mux by a GitHub Action, `check-videos` in `build`, first-frame posters. Full rules in MEDIA-STRATEGY.md §4.
+  - **Performance** (§3.4 rules 1–7, §8.2): `fetchpriority` on the hero and hidden slides, on-demand carousel media, embed facades, inline scripts instead of hydration, and how to measure.
+  - **Forms** (§7.1 rules 15–16, §7.1.2): `security.allowedDomains`, in-place answers, hosted HubSpot forms with noindexed thank-you pages.
+  - **Globals** (§3.8): `brand.favicon`; copy placeholders rendered as links.
+  - **Hidden blocks** (§3.9, §4.3, §4.4): template `hidden` and page `hiddenSlots`, honoured by the render path and JSON-LD.
+  - **Redirects** (§3.7): the Astro + Vercel emission steps for exact and wildcard rules. **404** (§3.7.3): `seo.noIndex: true`.
+  - **SEO** (§8, §8.1): one shared `seo` type, unique descriptions, title pattern, `sr-only` H1, noindexed pages out of the sitemap.
+  - **Accessibility** (§11.1): pause/play control on every auto-advancing carousel; content sliders no faster than 7 s.
+  - **Tag manager** (§7.2 rule 7): no duplicate GA4 property in the container.
+  - **`site.json`** (§4.6): `paths.videos`, `paths.videoManifest`, `media.video`; the example pins 2.0.
 
 - **1.15** (2026-08-19) — **A rule and its own worked example disagreed, and the example won.** §3.7 says redirects live at `/content/redirects.json`; §4.6's `site.json` example showed `src/content/redirects.json`. Four sites split two-and-two on that file, and because §11.0's checks look in the canonical place, both redirect checks silently reported *"this site declares no redirects"* on half the estate — passing green over a live rule that had made a real page unreachable. §4.6's example now uses §9's canonical layout throughout, with the deviation shown separately and labelled. Two rules added: **deviation is per path and needs a constraint, not a preference** (the loader reason reaches pages and collections, not `redirects.json`, which no loader reads), and **a tool that hardcodes a default instead of reading the descriptor is not conformant** — a declared path missing on disk is an error, only an undeclared one is an absent feature.
 
